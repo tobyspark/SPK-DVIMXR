@@ -12,10 +12,9 @@
 // v13 - Menu system for Resolution + Keying implemented, it writing to debug, it sending TVOne commands - Apr'11
 // v14 - Fixes for new PCB - Oct'11
 // v15 - TBZ PCB, OLED - Mar'12
-// v16 - TODO: EDID upload from USB mass storage
-// v17 - TODO: EDID creation from resolution
-
-// !! AIN on own thread doing some kind of low pass / median filter? ie. take average of two most similar values from last three
+// v16 - Comms menu, OSC. There in theory: lots of trouble from EthernetNetIf. NetServices better. But still silently crashes on creation of EthernetNetIf, despite (now) ample memory and code tested elsewhere (inc OSC + spkOLED). 
+// vxx - TODO: EDID upload from USB mass storage
+// vxx - TODO: EDID creation from resolution
 
 #include "mbed.h"
 
@@ -23,12 +22,21 @@
 #include "spk_utils.h"
 #include "spk_mRotaryEncoder.h"
 #include "spk_oled_ssd1305.h"
+#include "EthernetNetIf.h"
+#include "mbedOSC.h"
 
 #include <sstream>
 
-#define kMenuLine1 4
-#define kMenuLine2 5
-#define kStatusLine 7
+#define kMenuLine1 3
+#define kMenuLine2 4
+#define kCommsStatusLine 6
+#define kTVOneStatusLine 7
+
+#define kOSCMbedPort 10000
+#define kOSCMbedIPAddress 10,0,0,2
+#define kOSCMbedSubnetMask 255,255,255,0
+#define kOSCMbedGateway 10,0,0,1
+#define kOSCMbedDNS 10,0,0,1
 
 //// DEBUG
 
@@ -57,8 +65,6 @@ SPKTVOne tvOne(p28, p27, LED3, LED4, debug);
 // SPKDisplay(PinName mosi, PinName clk, PinName cs, PinName dc, PinName res, Serial *debugSerial = NULL);
 SPKDisplay screen(p5, p7, p8, p10, p9, debug);
 
-
-
 // Menu 
 
 SPKMenu *selectedMenu;
@@ -66,6 +72,11 @@ SPKMenu *lastSelectedMenu;
 SPKMenuOfMenus mainMenu;
 SPKMenuPayload resolutionMenu;
 SPKMenuPayload mixModeMenu;
+SPKMenuPayload commsMenu;
+
+// Comms Objects
+EthernetNetIf *ethernet = NULL;
+OSCClass *osc = NULL;
 
 // Fade logic constants + variables
 const float xFadeTolerance = 0.05;
@@ -124,22 +135,25 @@ bool setKeyParamsTo(int index) {
     return ok;
 }
 
+void oscCallback() {
+                screen.clearBufferRow(kCommsStatusLine);
+                screen.textToBuffer("OSC message received", kCommsStatusLine);
+                screen.sendBuffer();
+}
+
 int main() 
 {
-
     if (debug) 
     { 
         debug->printf("\r\n\r\n");
         debug->printf("*spark d-fuser -----------\r\n");
         debug->printf(" debug channel\r\n");
     }
-    
+
     // Splash screen
     screen.imageToBuffer();
     screen.textToBuffer("SPK:D-Fuser",0);
     screen.textToBuffer("SW beta.15",1);
-    screen.sendBuffer();
-
     
     // Set menu structure
     mixModeMenu.title = "Mix Mode";
@@ -160,9 +174,17 @@ int main()
     resolutionMenu.addMenuItem(kTV1ResolutionDescriptionDualHeadXGAp60, kTV1ResolutionDualHeadXGAp60, 0);
     resolutionMenu.addMenuItem(kTV1ResolutionDescriptionTripleHeadVGAp60, kTV1ResolutionTripleHeadVGAp60, 0);
 
+    commsMenu.title = "Network Mode";
+    enum { commsNone, commsOSC, commsArtNet, commsDMX}; 
+    commsMenu.addMenuItem("None", commsNone, 0);
+    commsMenu.addMenuItem("OSC", commsOSC, 0);
+    commsMenu.addMenuItem("ArtNet", commsArtNet, 0);
+    commsMenu.addMenuItem("DMX", commsDMX, 0);
+
     mainMenu.title = "Main Menu";
     mainMenu.addMenuItem(&mixModeMenu);
     mainMenu.addMenuItem(&resolutionMenu);
+    mainMenu.addMenuItem(&commsMenu);
     
     selectedMenu = &mainMenu;
     lastSelectedMenu = &mainMenu;    
@@ -188,9 +210,11 @@ int main()
     screen.clearBufferRow(kMenuLine2);
     screen.textToBuffer(selectedMenu->selectedString(), kMenuLine2);
     screen.horizLineToBuffer(kMenuLine2*pixInPage + pixInPage);
-    screen.horizLineToBuffer(kStatusLine*pixInPage - 1);
-    screen.clearBufferRow(kStatusLine);
-    screen.textToBuffer(sendOK, 7);
+    screen.horizLineToBuffer(kCommsStatusLine*pixInPage - 1);
+    screen.clearBufferRow(kCommsStatusLine);
+    screen.textToBuffer(commsMenu.selectedString(), kCommsStatusLine);
+    screen.clearBufferRow(kTVOneStatusLine);
+    screen.textToBuffer(sendOK, kTVOneStatusLine);
     screen.sendBuffer();
 
 
@@ -203,6 +227,12 @@ int main()
     //// MIXER RUN
 
     while (1) {
+
+        //// Task background things
+        if (commsMenu.selectedPayload1() == commsOSC)
+        {
+            Net::poll();
+        }
 
         //// MENU
         
@@ -311,8 +341,8 @@ int main()
                 if (ok) sentOK = "Sent:";
                 else sentOK = "Send Error:";
                 
-                screen.clearBufferRow(kStatusLine);
-                screen.textToBuffer(sentOK + sentMSG.str(), kStatusLine);
+                screen.clearBufferRow(kTVOneStatusLine);
+                screen.textToBuffer(sentOK + sentMSG.str(), kTVOneStatusLine);
                 screen.sendBuffer();
                 
                 if (debug) { debug->printf("Changing mix mode"); }
@@ -332,11 +362,65 @@ int main()
                 std::stringstream sentMSG;
                 sentMSG << "Res " << resolutionMenu.selectedPayload1() << ", EDID " << resolutionMenu.selectedPayload2();
                 
-                screen.clearBufferRow(kStatusLine);
-                screen.textToBuffer(sentOK + sentMSG.str(), kStatusLine);
+                screen.clearBufferRow(kTVOneStatusLine);
+                screen.textToBuffer(sentOK + sentMSG.str(), kTVOneStatusLine);
                 screen.sendBuffer();
                 
                 if (debug) { debug->printf("Changing resolution"); }
+            }
+            else if (selectedMenu == &commsMenu)
+            {
+                std::string commsType = "Network: --";
+                std::stringstream commsStatus;
+            
+                // Tear down any existing comms
+                // This is the action of commsNone
+                // And also clears the way for other comms actions
+                if (osc) {delete osc; osc = NULL;}  
+                if (ethernet) {delete ethernet; ethernet = NULL;}
+
+                if (commsMenu.selectedPayload1() == commsOSC) 
+                {
+                    commsType = "OSC: ";                    
+                    
+                    ethernet = new EthernetNetIf(
+                    IpAddr(kOSCMbedIPAddress), 
+                    IpAddr(kOSCMbedSubnetMask), 
+                    IpAddr(kOSCMbedGateway), 
+                    IpAddr(kOSCMbedDNS)  
+                    );
+printf("ethernet created");                    
+                    EthernetErr ethError = ethernet->setup();
+                    if(ethError)
+                    {
+                        if (debug) debug->printf("Ethernet setup error, %d", ethError);
+                        commsStatus << "Ethernet setup failed";
+                        // commsMenu = commsNone; //FIXME: this should set the selected menu item to none, but errors. wtf?
+                        // break out of here. this setup should be a function that returns a boolean
+                    }
+
+printf("ethernet setup done");
+
+                    osc = new OSCClass();
+                    osc->messageReceivedCallback.attach(&oscCallback);
+                    osc->begin(kOSCMbedPort);
+                    
+                    commsStatus << "Listening on .25:" << kOSCMbedPort;
+                    
+printf("osc done");
+                }
+                else if (commsMenu.selectedPayload1() == commsArtNet) 
+                {
+                    
+                }
+                else if (commsMenu.selectedPayload1() == commsDMX) 
+                {
+                    
+                }
+                
+                screen.clearBufferRow(kCommsStatusLine);
+                screen.textToBuffer(commsType + commsStatus.str(), kCommsStatusLine);
+                screen.sendBuffer();
             }
             else
             {
@@ -345,7 +429,7 @@ int main()
 
         }
         
-
+       
         
         //// MIX 
 

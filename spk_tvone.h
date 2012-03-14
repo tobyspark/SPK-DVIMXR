@@ -6,6 +6,9 @@
 #ifndef SPKTVOne_h
 #define SPKTVOne_h
 
+// Comment out the following firmware defines as appropriate
+#define kTV1Firmware362
+
 // Sources - Note only higher end models have more than 2 in....
 //#pragma mark -
 //#pragma mark Channel / Sources
@@ -275,18 +278,27 @@
 #define kTV1ResolutionUXGAp75                0x4A                    
 #define kTV1ResolutionUXGAp85                0x4B
 #define kTV1ResolutionWSXGAPLUSp60     0x53
-#define kTV1Resolution1080p2398                0x60      // NOTE Firmware 362 has higher resolution numbers for these resolutions         
-#define kTV1Resolution1080p24                0x62              
-#define kTV1Resolution1080p25                0x64            
-#define kTV1Resolution1080p2997                0x65         
-#define kTV1Resolution1080p30                0x66        
-#define kTV1Resolution1080p50                0x67        
-#define kTV1Resolution1080p5996                0x69        
-#define kTV1Resolution1080p60                0x6A                
-#define kTV1Resolution1080p75                0x6D        
-#define kTV1ResolutionWUXGAp60                0x70                        
-#define kTV1ResolutionWUXGAp75                0x73                     
-#define kTV1ResolutionWUXGAp85                0x74        
+
+#ifndef kTV1Firmware362
+ #define kTV1Resolution1080p60                0x6D
+ #define kTV1Resolution1080p75                0x66        
+ #define kTV1ResolutionWUXGAp60                0x69                        
+ #define kTV1ResolutionWUXGAp75                0x6C                        
+ #define kTV1ResolutionWUXGAp85                0x6D
+#else
+ #define kTV1Resolution1080p2398                0x60            
+ #define kTV1Resolution1080p24                0x62              
+ #define kTV1Resolution1080p25                0x64            
+ #define kTV1Resolution1080p2997                0x65         
+ #define kTV1Resolution1080p30                0x66        
+ #define kTV1Resolution1080p50                0x67        
+ #define kTV1Resolution1080p5996                0x69        
+ #define kTV1Resolution1080p60                0x6A                
+ #define kTV1Resolution1080p75                0x6D        
+ #define kTV1ResolutionWUXGAp60                0x70                        
+ #define kTV1ResolutionWUXGAp75                0x73                     
+ #define kTV1ResolutionWUXGAp85                0x74
+#endif
 
 #define kTV1ResolutionDescriptionVGA                "VGA (640x480) @ 60Hz"
 #define kTV1ResolutionDescriptionNTSC                "NTSC (720x480 @ 59.95Hz)"                        

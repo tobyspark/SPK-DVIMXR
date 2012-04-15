@@ -22,6 +22,7 @@
 #include "spk_utils.h"
 #include "spk_mRotaryEncoder.h"
 #include "spk_oled_ssd1305.h"
+#include "spk_oled_gfx.h"
 #include "EthernetNetIf.h"
 #include "mbedOSC.h"
 
@@ -149,9 +150,14 @@ int main()
         debug->printf("*spark d-fuser -----------\r\n");
         debug->printf(" debug channel\r\n");
     }
-
+    
+    // Set display font
+    screen.fontStartCharacter = &characterBytesStartChar;
+    screen.fontEndCharacter = &characterBytesEndChar;
+    screen.fontCharacters = characterBytes;
+    
     // Splash screen
-    screen.imageToBuffer();
+    screen.imageToBuffer(spkDisplayLogo);
     screen.textToBuffer("SPK:D-Fuser",0);
     screen.textToBuffer("SW beta.15",1);
     
@@ -248,7 +254,6 @@ int main()
             // update OLED line 2 here
             screen.clearBufferRow(kMenuLine2);
             screen.textToBuffer(selectedMenu->selectedString(), kMenuLine2);
-            screen.sendBuffer();
             
             if (debug) debug->printf("%s \r\n", selectedMenu->selectedString().c_str());
 
@@ -275,7 +280,6 @@ int main()
                 screen.clearBufferRow(kMenuLine2);
                 screen.textToBuffer(selectedMenu->title, kMenuLine1);
                 screen.textToBuffer(selectedMenu->selectedString(), kMenuLine2);
-                screen.sendBuffer();
                 
                 if (debug)
                 {
@@ -294,7 +298,6 @@ int main()
                 screen.clearBufferRow(kMenuLine2);
                 screen.textToBuffer(selectedMenu->title, kMenuLine1);
                 screen.textToBuffer(selectedMenu->selectedString(), kMenuLine2);
-                screen.sendBuffer();
                 
                 if (debug)
                 {
@@ -343,7 +346,6 @@ int main()
                 
                 screen.clearBufferRow(kTVOneStatusLine);
                 screen.textToBuffer(sentOK + sentMSG.str(), kTVOneStatusLine);
-                screen.sendBuffer();
                 
                 if (debug) { debug->printf("Changing mix mode"); }
             }
@@ -364,7 +366,6 @@ int main()
                 
                 screen.clearBufferRow(kTVOneStatusLine);
                 screen.textToBuffer(sentOK + sentMSG.str(), kTVOneStatusLine);
-                screen.sendBuffer();
                 
                 if (debug) { debug->printf("Changing resolution"); }
             }
@@ -389,7 +390,7 @@ int main()
                     IpAddr(kOSCMbedGateway), 
                     IpAddr(kOSCMbedDNS)  
                     );
-printf("ethernet created");                    
+printf("ethernet created");                  
                     EthernetErr ethError = ethernet->setup();
                     if(ethError)
                     {
@@ -405,7 +406,7 @@ printf("ethernet setup done");
                     osc->messageReceivedCallback.attach(&oscCallback);
                     osc->begin(kOSCMbedPort);
                     
-                    commsStatus << "Listening on .25:" << kOSCMbedPort;
+                    commsStatus << "Listening " << kOSCMbedPort;
                     
 printf("osc done");
                 }
@@ -420,15 +421,15 @@ printf("osc done");
                 
                 screen.clearBufferRow(kCommsStatusLine);
                 screen.textToBuffer(commsType + commsStatus.str(), kCommsStatusLine);
-                screen.sendBuffer();
             }
             else
             {
                 if (debug) { debug->printf("Warning: No action identified"); }
             }
-
         }
         
+        // Send any updates to the display
+        screen.sendBuffer();
        
         
         //// MIX 

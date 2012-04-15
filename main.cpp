@@ -25,6 +25,7 @@
 #include "spk_oled_gfx.h"
 #include "EthernetNetIf.h"
 #include "mbedOSC.h"
+#include "DmxArtNet.h"
 
 #include <sstream>
 
@@ -38,6 +39,9 @@
 #define kOSCMbedSubnetMask 255,255,255,0
 #define kOSCMbedGateway 10,0,0,1
 #define kOSCMbedDNS 10,0,0,1
+
+#define kArtNetBindIPAddress 2,0,0,100
+#define kArtNetBroadcastAddress 2,255,255,255
 
 //// DEBUG
 
@@ -78,12 +82,12 @@ SPKMenuPayload commsMenu;
 // Comms Objects
 EthernetNetIf *ethernet = NULL;
 OSCClass *osc = NULL;
+OSCMessage recMessage;
+DmxArtNet *artNet = NULL;
 
-// Fade logic constants + variables
+// Fade logic constants
 const float xFadeTolerance = 0.05;
 const float fadeUpTolerance = 0.05;
-float xFade = 0;
-float fadeUp = 1;
 
 // A&B Fade as resolved percent
 int fadeAPercent = 0;
@@ -104,6 +108,52 @@ int keyerParams[2][6] =
     // ...
 };
 
+void processOSC(float &xFade, float &fadeUp) {
+    std::stringstream statusMessage;
+    statusMessage.setf(ios::fixed,ios::floatfield);
+    statusMessage.precision(2);
+    
+    if (!strcmp( recMessage.getTopAddress() , "dvimxr" )) 
+    {
+        statusMessage << "OSC: /dvimxr";
+        if (!strcmp( recMessage.getSubAddress() , "xFade" )) 
+            if (recMessage.getArgNum() == 1)
+                if (recMessage.getTypeTag(0) == 'f')
+                {
+                    double newXFade = recMessage.getArgFloat(0);
+                    statusMessage << "/xFade " << newXFade;
+                    xFade = newXFade;
+                }
+        else if (!strcmp( recMessage.getSubAddress() , "fadeUp" ))
+            if (recMessage.getArgNum() == 1)
+                if (recMessage.getTypeTag(0) == 'f')
+                {
+                    double newFadeUp = recMessage.getArgFloat(0);
+                    statusMessage << "/fadeUp " << newFadeUp;
+                    xFade = newFadeUp;
+                }
+        else statusMessage << recMessage.getSubAddress() << " - Ignoring";
+    }
+    else
+    {
+        statusMessage << "OSC: " << recMessage.getTopAddress() << " - Ignoring";
+    }
+    
+    screen.clearBufferRow(kCommsStatusLine);
+    screen.textToBuffer(statusMessage.str(), kCommsStatusLine);
+    screen.sendBuffer();
+    if (debug) debug->printf("%s \r\n", statusMessage.str().c_str());
+    
+}
+
+void processArtNet(float &xFade, float &fadeUp) {
+
+
+    screen.clearBufferRow(kCommsStatusLine);
+    screen.textToBuffer("ArtNet activity", kCommsStatusLine);
+    screen.sendBuffer();
+    if (debug) debug->printf("ArtNet activity");
+}
 
 
 inline float fadeCalc (const float AIN, const float tolerance) {
@@ -134,12 +184,6 @@ bool setKeyParamsTo(int index) {
     } 
     
     return ok;
-}
-
-void oscCallback() {
-                screen.clearBufferRow(kCommsStatusLine);
-                screen.textToBuffer("OSC message received", kCommsStatusLine);
-                screen.sendBuffer();
 }
 
 int main() 
@@ -235,7 +279,7 @@ int main()
     while (1) {
 
         //// Task background things
-        if (commsMenu.selectedPayload1() == commsOSC)
+        if (commsMenu.selectedPayload1() == commsOSC || commsMenu.selectedPayload1() == commsArtNet)
         {
             Net::poll();
         }
@@ -379,6 +423,7 @@ int main()
                 // And also clears the way for other comms actions
                 if (osc) {delete osc; osc = NULL;}  
                 if (ethernet) {delete ethernet; ethernet = NULL;}
+                if (artNet) {delete artNet; artNet = NULL;}
 
                 if (commsMenu.selectedPayload1() == commsOSC) 
                 {
@@ -390,7 +435,7 @@ int main()
                     IpAddr(kOSCMbedGateway), 
                     IpAddr(kOSCMbedDNS)  
                     );
-printf("ethernet created");                  
+                  
                     EthernetErr ethError = ethernet->setup();
                     if(ethError)
                     {
@@ -400,19 +445,31 @@ printf("ethernet created");
                         // break out of here. this setup should be a function that returns a boolean
                     }
 
-printf("ethernet setup done");
-
                     osc = new OSCClass();
-                    osc->messageReceivedCallback.attach(&oscCallback);
+                    osc->setReceiveMessage(&recMessage);
                     osc->begin(kOSCMbedPort);
                     
-                    commsStatus << "Listening " << kOSCMbedPort;
-                    
-printf("osc done");
+                    commsStatus << "Listening on " << kOSCMbedPort;
                 }
                 else if (commsMenu.selectedPayload1() == commsArtNet) 
                 {
+                    commsType = "ArtNet: ";                    
+
+                    artNet = new DmxArtNet();
                     
+                    artNet->BindIpAddress = IpAddr(kArtNetBindIPAddress);
+                    artNet->BCastAddress = IpAddr(kArtNetBroadcastAddress);
+                
+                    artNet->InitArtPollReplyDefaults();
+                
+                    artNet->ArtPollReply.PortType[0] = 128; // output
+                    artNet->ArtPollReply.PortType[2] = 64; // input
+                    artNet->ArtPollReply.GoodInput[2] = 4;
+                
+                    artNet->Init();
+                    artNet->SendArtPollReply(); // announce to art-net nodes
+                    
+                    commsStatus << "Listening";
                 }
                 else if (commsMenu.selectedPayload1() == commsDMX) 
                 {
@@ -432,10 +489,14 @@ printf("osc done");
         screen.sendBuffer();
        
         
-        //// MIX 
+        //// MIX MIX MIX MIX MIX MIX MIX MIX MIXMIX MIX MIXMIX MIX MIXMIX MIX MIXMIX MIX MIXMIX MIX MIX
 
         bool updateFade = false;
-
+        float xFade = 0;
+        float fadeUp = 1;
+        
+        //// TASK: Process control surface
+        
         // Get new states of tap buttons, remembering at end of loop() assign these current values to the previous variables
         const bool tapLeft = (tapLeftDIN) ? false : true;
         const bool tapRight = (tapRightDIN) ? false : true;
@@ -460,6 +521,21 @@ printf("osc done");
         else xFade = fadeCalc(xFadeAINCached, xFadeTolerance);
 
         fadeUp = 1.0 - fadeCalc(fadeUpAINCached, fadeUpTolerance);
+
+        //// TASK: Process Network Comms
+        if (commsMenu.selectedPayload1() == commsOSC)
+        {
+            if (osc->newMessage) 
+            {
+                osc->newMessage = false; // fixme!
+                processOSC(xFade, fadeUp);
+            }
+        }
+
+        if (commsMenu.selectedPayload1() == commsArtNet)
+        {
+            if (artNet->Work()) processArtNet(xFade, fadeUp);
+        }
 
         // WISH: Really, we should have B at 100% and A fading in over that, with fade to black implemented as a fade in black layer on top of that correct mix.
         // There is no way to implement that though, and the alphas get messy, so this is the only way (afaik).

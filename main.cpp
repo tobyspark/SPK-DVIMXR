@@ -52,10 +52,10 @@ Serial *debug = new Serial(USBTX, USBRX); // For debugging via USB serial
 //// mBED PIN ASSIGNMENTS
 
 // Inputs
-AnalogIn xFadeAIN(p19);    
-AnalogIn fadeUpAIN(p20);
+AnalogIn xFadeAIN(p20);    
+AnalogIn fadeUpAIN(p19);
 DigitalIn tapLeftDIN(p24);
-DigitalIn tapRightDIN(p21);
+DigitalIn tapRightDIN(p23);
 
 SPKRotaryEncoder menuEnc(p17, p16, p15);
 
@@ -64,8 +64,7 @@ PwmOut fadeAPO(LED1);
 PwmOut fadeBPO(LED2);
 
 // SPKTVOne(PinName txPin, PinName rxPin, PinName signWritePin, PinName signErrorPin, Serial *debugSerial)
-SPKTVOne tvOne(p28, p27, LED3, LED4, debug);
-//SPKTVOne tvOne(p28, p27, LED3, LED4);
+SPKTVOne tvOne(p13, p14, LED3, LED4, debug);
 
 // SPKDisplay(PinName mosi, PinName clk, PinName cs, PinName dc, PinName res, Serial *debugSerial = NULL);
 SPKDisplay screen(p5, p7, p8, p10, p9, debug);

@@ -12,7 +12,9 @@
 // v13 - Menu system for Resolution + Keying implemented, it writing to debug, it sending TVOne commands - Apr'11
 // v14 - Fixes for new PCB - Oct'11
 // v15 - TBZ PCB, OLED - Mar'12
-// v16 - Comms menu, OSC. There in theory: lots of trouble from EthernetNetIf. NetServices better. But still silently crashes on creation of EthernetNetIf, despite (now) ample memory and code tested elsewhere (inc OSC + spkOLED). 
+// v16 - Comms menu, OSC, ArtNet - April'12
+// v17 - RJ45 - May'12
+// v18 - DMX - July'12
 // vxx - TODO: EDID upload from USB mass storage
 // vxx - TODO: EDID creation from resolution
 
@@ -26,13 +28,42 @@
 #include "EthernetNetIf.h"
 #include "mbedOSC.h"
 #include "DmxArtNet.h"
+#include "DMX.h"
 
 #include <sstream>
+
+// MBED PINS
+
+#define kMBED_AIN_XFADE     p20
+#define kMBED_AIN_FADEUP    p19
+#define kMBED_DIN_TAP_L     p24
+#define kMBED_DIN_TAP_R     p23
+#define kMBED_ENC_SW        p15
+#define kMBED_ENC_A         p16
+#define kMBED_ENC_B         p17
+
+#define kMBED_RS232_TTLTX   p13
+#define kMBED_RS232_TTLRX   p14
+
+#define kMBED_OLED_MOSI     p5
+#define kMBED_OLED_SCK      p7
+#define kMBED_OLED_CS       p8
+#define kMBED_OLED_RES      p9
+#define kMBED_OLED_DC       p10
+
+#define kMBED_DIN_ETHLO_DMXHI       p30
+#define kMBED_DOUT_RS485_TXHI_RXLO  p29
+#define kMBED_RS485_TTLTX           p28
+#define kMBED_RS485_TTLRX           p27
+
+// DISPLAY
 
 #define kMenuLine1 3
 #define kMenuLine2 4
 #define kCommsStatusLine 6
 #define kTVOneStatusLine 7
+
+// NETWORKING
 
 #define kOSCMbedPort 10000
 #define kOSCMbedIPAddress 10,0,0,2
@@ -43,46 +74,61 @@
 #define kArtNetBindIPAddress 2,0,0,100
 #define kArtNetBroadcastAddress 2,255,255,255
 
+#define kDMXInChannelXFade 0
+#define kDMXInChannelFadeUp 1
+#define kDMXOutChannelXFade 0
+#define kDMXOutChannelFadeUp 1
+
 //// DEBUG
 
 // Comment out one or the other...
-Serial *debug = new Serial(USBTX, USBRX); // For debugging via USB serial
-// Serial *debug = NULL; // For release (no debugging)
+//Serial *debug = new Serial(USBTX, USBRX); // For debugging via USB serial
+Serial *debug = NULL; // For release (no debugging)
 
 //// mBED PIN ASSIGNMENTS
 
 // Inputs
-AnalogIn xFadeAIN(p20);    
-AnalogIn fadeUpAIN(p19);
-DigitalIn tapLeftDIN(p24);
-DigitalIn tapRightDIN(p23);
+AnalogIn xFadeAIN(kMBED_AIN_XFADE);    
+AnalogIn fadeUpAIN(kMBED_AIN_FADEUP);
+DigitalIn tapLeftDIN(kMBED_DIN_TAP_L);
+DigitalIn tapRightDIN(kMBED_DIN_TAP_R);
 
-SPKRotaryEncoder menuEnc(p17, p16, p15);
+SPKRotaryEncoder menuEnc(kMBED_ENC_A, kMBED_ENC_B, kMBED_ENC_SW);
+
+DigitalIn rj45ModeDIN(kMBED_DIN_ETHLO_DMXHI);
 
 // Outputs
 PwmOut fadeAPO(LED1);
 PwmOut fadeBPO(LED2);
 
+DigitalOut dmxDirectionDOUT(kMBED_DOUT_RS485_TXHI_RXLO);
+
 // SPKTVOne(PinName txPin, PinName rxPin, PinName signWritePin, PinName signErrorPin, Serial *debugSerial)
-SPKTVOne tvOne(p13, p14, LED3, LED4, debug);
+SPKTVOne tvOne(kMBED_RS232_TTLTX, kMBED_RS232_TTLRX, LED3, LED4, debug);
 
 // SPKDisplay(PinName mosi, PinName clk, PinName cs, PinName dc, PinName res, Serial *debugSerial = NULL);
-SPKDisplay screen(p5, p7, p8, p10, p9, debug);
+SPKDisplay screen(kMBED_OLED_MOSI, kMBED_OLED_SCK, kMBED_OLED_CS, kMBED_OLED_DC, kMBED_OLED_RES, debug);
 
 // Menu 
-
 SPKMenu *selectedMenu;
 SPKMenu *lastSelectedMenu;
 SPKMenuOfMenus mainMenu;
 SPKMenuPayload resolutionMenu;
 SPKMenuPayload mixModeMenu;
+enum { blend, additive, lumaKey, chromaKey1, chromaKey2, chromaKey3 }; // additive will require custom TVOne firmware.
+int mixMode = blend;
 SPKMenuPayload commsMenu;
+enum { commsNone, commsOSC, commsArtNet, commsDMXIn, commsDMXOut};
+int commsMode = commsNone;
 
-// Comms Objects
+// RJ45 Comms
+enum { rj45Ethernet = 0, rj45DMX = 1}; // These values from circuit
+int rj45Mode = -1;
 EthernetNetIf *ethernet = NULL;
 OSCClass *osc = NULL;
 OSCMessage recMessage;
 DmxArtNet *artNet = NULL;
+DMX *dmx = NULL;
 
 // Fade logic constants
 const float xFadeTolerance = 0.05;
@@ -93,8 +139,7 @@ int fadeAPercent = 0;
 int fadeBPercent = 0;
 
 // Tap button states
-bool tapLeftPrevious = false;
-bool tapRightPrevious = false;
+bool tapLeftWasFirstPressed = false;
 
 // Key mode parameters
 int keyerParamsSet = -1; // last keyParams index uploaded to unit 
@@ -147,13 +192,45 @@ void processOSC(float &xFade, float &fadeUp) {
 
 void processArtNet(float &xFade, float &fadeUp) {
 
-
     screen.clearBufferRow(kCommsStatusLine);
     screen.textToBuffer("ArtNet activity", kCommsStatusLine);
     screen.sendBuffer();
     if (debug) debug->printf("ArtNet activity");
 }
 
+void processDMXIn(float &xFade, float &fadeUp) {
+
+    std::stringstream statusMessage;
+
+    int xFadeDMX = dmx->get(kDMXInChannelXFade);
+    int fadeUpDMX = dmx->get(kDMXInChannelXFade);
+
+    xFade = (float)xFadeDMX/255;
+    fadeUp = (float)fadeUpDMX/255;
+
+    screen.clearBufferRow(kCommsStatusLine);
+    statusMessage << "DMX In: xF " << xFadeDMX << " fUp " << fadeUpDMX;
+    screen.textToBuffer(statusMessage.str(), kCommsStatusLine);
+    screen.sendBuffer();
+    if (debug) debug->printf(statusMessage.str().c_str());
+}
+
+void processDMXOut(float &xFade, float &fadeUp) {
+
+    std::stringstream statusMessage;
+
+    int xFadeDMX = xFade*255;
+    int fadeUpDMX = fadeUp*255;
+    
+    dmx->put(kDMXOutChannelXFade, xFadeDMX);
+    dmx->put(kDMXOutChannelFadeUp, fadeUpDMX);
+    
+    screen.clearBufferRow(kCommsStatusLine);
+    statusMessage << "DMX Out: xF " << xFadeDMX << " fUp " << fadeUpDMX;
+    screen.textToBuffer(statusMessage.str(), kCommsStatusLine);
+    screen.sendBuffer();
+    if (debug) debug->printf(statusMessage.str().c_str());
+}
 
 inline float fadeCalc (const float AIN, const float tolerance) {
     float pos ;
@@ -202,11 +279,11 @@ int main()
     // Splash screen
     screen.imageToBuffer(spkDisplayLogo);
     screen.textToBuffer("SPK:D-Fuser",0);
-    screen.textToBuffer("SW beta.15",1);
+    screen.textToBuffer("SW beta.18",1);
+    screen.sendBuffer();
     
     // Set menu structure
     mixModeMenu.title = "Mix Mode";
-    enum { blend, additive, lumaKey, chromaKey1, chromaKey2, chromaKey3 }; // additive will require custom TVOne firmware.
     mixModeMenu.addMenuItem("Blend", blend, 0);
     mixModeMenu.addMenuItem("LumaKey", lumaKey, 0);
     mixModeMenu.addMenuItem("ChromaKey - Blue", chromaKey1, 0);
@@ -223,12 +300,12 @@ int main()
     resolutionMenu.addMenuItem(kTV1ResolutionDescriptionDualHeadXGAp60, kTV1ResolutionDualHeadXGAp60, 0);
     resolutionMenu.addMenuItem(kTV1ResolutionDescriptionTripleHeadVGAp60, kTV1ResolutionTripleHeadVGAp60, 0);
 
-    commsMenu.title = "Network Mode";
-    enum { commsNone, commsOSC, commsArtNet, commsDMX}; 
+    commsMenu.title = "Network Mode"; 
     commsMenu.addMenuItem("None", commsNone, 0);
     commsMenu.addMenuItem("OSC", commsOSC, 0);
     commsMenu.addMenuItem("ArtNet", commsArtNet, 0);
-    commsMenu.addMenuItem("DMX", commsDMX, 0);
+    commsMenu.addMenuItem("DMX In", commsDMXIn, 0);
+    commsMenu.addMenuItem("DMX Out", commsDMXOut, 0);
 
     mainMenu.title = "Main Menu";
     mainMenu.addMenuItem(&mixModeMenu);
@@ -278,9 +355,29 @@ int main()
     while (1) {
 
         //// Task background things
-        if (commsMenu.selectedPayload1() == commsOSC || commsMenu.selectedPayload1() == commsArtNet)
+        if (ethernet && rj45Mode == rj45Ethernet)
         {
+            if (debug) debug->printf("net poll");
             Net::poll();
+        }
+
+        //// RJ45 SWITCH
+        
+        if (rj45ModeDIN != rj45Mode)
+        {
+            // update state
+            rj45Mode = rj45ModeDIN;
+            if (rj45Mode == rj45Ethernet) commsMenu.title = "Network Mode [Ethernet]";
+            if (rj45Mode == rj45DMX) commsMenu.title = "Network Mode [DMX]";
+            
+            // cancel old comms
+            commsMode = commsNone;
+            commsMenu = commsMode;
+            
+            // refresh display
+            if (selectedMenu == &commsMenu) screen.textToBuffer(selectedMenu->title, kMenuLine1);
+            if (rj45Mode == rj45Ethernet) screen.textToBuffer("RJ45: Ethernet Engaged", kCommsStatusLine);
+            if (rj45Mode == rj45DMX) screen.textToBuffer("RJ45: DMX Engaged", kCommsStatusLine);
         }
 
         //// MENU
@@ -299,7 +396,6 @@ int main()
             screen.textToBuffer(selectedMenu->selectedString(), kMenuLine2);
             
             if (debug) debug->printf("%s \r\n", selectedMenu->selectedString().c_str());
-
         }
         
         // Action menu item
@@ -352,6 +448,8 @@ int main()
             // With that out of the way, we should be actioning a specific menu's payload?
             else if (selectedMenu == &mixModeMenu)
             {
+                mixMode = mixModeMenu.selectedPayload1();
+            
                 bool ok = false;
                 std::string sentOK;
                 std::stringstream sentMSG;
@@ -414,19 +512,31 @@ int main()
             }
             else if (selectedMenu == &commsMenu)
             {
-                std::string commsType = "Network: --";
+                std::string commsTypeString = "Network: --";
                 std::stringstream commsStatus;
             
                 // Tear down any existing comms
                 // This is the action of commsNone
                 // And also clears the way for other comms actions
-                if (osc) {delete osc; osc = NULL;}  
-                if (ethernet) {delete ethernet; ethernet = NULL;}
-                if (artNet) {delete artNet; artNet = NULL;}
-
-                if (commsMenu.selectedPayload1() == commsOSC) 
+                if (osc)        {delete osc; osc = NULL;}  
+                if (ethernet)   {delete ethernet; ethernet = NULL;}
+                if (artNet)     {delete artNet; artNet = NULL;}
+                if (dmx)        {delete dmx; dmx = NULL;}
+                
+                // Ensure we can't change to comms modes the hardware isn't switched to
+                if (rj45Mode == rj45DMX && (commsMenu.selectedPayload1() == commsOSC || commsMenu.selectedPayload1() == commsArtNet))
                 {
-                    commsType = "OSC: ";                    
+                    commsTypeString = "RJ45 not in Ethernet mode";
+                }
+                else if (rj45Mode == rj45Ethernet && (commsMenu.selectedPayload1() == commsDMXIn || commsMenu.selectedPayload1() == commsDMXOut))
+                {
+                    commsTypeString = "RJ45 not in DMX mode";
+                }
+                // Action!
+                else if (commsMenu.selectedPayload1() == commsOSC) 
+                {
+                    commsMode = commsOSC;
+                    commsTypeString = "OSC: ";                    
                     
                     ethernet = new EthernetNetIf(
                     IpAddr(kOSCMbedIPAddress), 
@@ -440,7 +550,7 @@ int main()
                     {
                         if (debug) debug->printf("Ethernet setup error, %d", ethError);
                         commsStatus << "Ethernet setup failed";
-                        // commsMenu = commsNone; //FIXME: this should set the selected menu item to none, but errors. wtf?
+                        commsMenu = commsNone;
                         // break out of here. this setup should be a function that returns a boolean
                     }
 
@@ -452,7 +562,8 @@ int main()
                 }
                 else if (commsMenu.selectedPayload1() == commsArtNet) 
                 {
-                    commsType = "ArtNet: ";                    
+                    commsMode = commsArtNet;
+                    commsTypeString = "ArtNet: ";                    
 
                     artNet = new DmxArtNet();
                     
@@ -470,13 +581,27 @@ int main()
                     
                     commsStatus << "Listening";
                 }
-                else if (commsMenu.selectedPayload1() == commsDMX) 
+                else if (commsMenu.selectedPayload1() == commsDMXIn) 
                 {
+                    commsMode = commsDMXIn;
+                    commsTypeString = "DMX In: ";
                     
+                    dmxDirectionDOUT = 0;
+                    
+                    dmx = new DMX(kMBED_RS485_TTLTX, kMBED_RS485_TTLRX);
                 }
-                
+                else if (commsMenu.selectedPayload1() == commsDMXOut) 
+                {
+                    commsMode = commsDMXOut;
+                    commsTypeString = "DMX Out: ";
+                    
+                    dmxDirectionDOUT = 1;
+                    
+                    dmx = new DMX(kMBED_RS485_TTLTX, kMBED_RS485_TTLRX);
+                }
+                                
                 screen.clearBufferRow(kCommsStatusLine);
-                screen.textToBuffer(commsType + commsStatus.str(), kCommsStatusLine);
+                screen.textToBuffer(commsTypeString + commsStatus.str(), kCommsStatusLine);
             }
             else
             {
@@ -486,9 +611,9 @@ int main()
         
         // Send any updates to the display
         screen.sendBuffer();
-       
         
-        //// MIX MIX MIX MIX MIX MIX MIX MIX MIXMIX MIX MIXMIX MIX MIXMIX MIX MIXMIX MIX MIXMIX MIX MIX
+        
+        //// MIX MIX MIX MIX MIX MIX MIX MIX MIX MIX MIX MIXMIX MIX MIXMIX MIX MIX MIX MIX MIXMIX MIX MIX
 
         bool updateFade = false;
         float xFade = 0;
@@ -497,32 +622,39 @@ int main()
         //// TASK: Process control surface
         
         // Get new states of tap buttons, remembering at end of loop() assign these current values to the previous variables
-        const bool tapLeft = (tapLeftDIN) ? false : true;
-        const bool tapRight = (tapRightDIN) ? false : true;
+        const bool tapLeft = !tapLeftDIN;
+        const bool tapRight = !tapRightDIN;
         
         // We're going to cache the analog in reads, as have seen wierdness otherwise
-        const float xFadeAINCached = xFadeAIN.read();
+        const float xFadeAINCached = 1-xFadeAIN.read();
         const float fadeUpAINCached = fadeUpAIN.read();
         
         // When a tap is depressed, we can ignore any move of the crossfader but not fade to black
         if (tapLeft || tapRight) 
         {
-            // If both are pressed, which was not pressed in the last loop?
+            // If both are pressed, take to the one that is new, ie. not the first pressed.
             if (tapLeft && tapRight) 
             {
-                if (!tapLeftPrevious) xFade = 0;
-                if (!tapRightPrevious) xFade = 1;
+                xFade = tapLeftWasFirstPressed ? 1 : 0;
             }
-            // If just one is pressed, is this it going high or the other going low?
-            else if (tapLeft && (!tapLeftPrevious || tapRightPrevious)) xFade = 0;
-            else if (tapRight && (!tapRightPrevious || tapLeftPrevious)) xFade = 1;
-        } 
+            // If just one is pressed, take to that and remember which is pressed
+            else if (tapLeft) 
+            {
+                xFade = 0;
+                tapLeftWasFirstPressed = 1;
+            }
+            else if (tapRight) 
+            {
+                xFade = 1;
+                tapLeftWasFirstPressed = 0;
+            }
+        }
         else xFade = fadeCalc(xFadeAINCached, xFadeTolerance);
 
         fadeUp = 1.0 - fadeCalc(fadeUpAINCached, fadeUpTolerance);
 
         //// TASK: Process Network Comms
-        if (commsMenu.selectedPayload1() == commsOSC)
+        if (commsMode == commsOSC)
         {
             if (osc->newMessage) 
             {
@@ -531,9 +663,19 @@ int main()
             }
         }
 
-        if (commsMenu.selectedPayload1() == commsArtNet)
+        if (commsMode == commsArtNet)
         {
             if (artNet->Work()) processArtNet(xFade, fadeUp);
+        }
+
+        if (commsMode == commsDMXIn)
+        {
+            processDMXIn(xFade, fadeUp);
+        }
+
+        if (commsMode == commsDMXOut)
+        {
+            processDMXOut(xFade, fadeUp);
         }
 
         // WISH: Really, we should have B at 100% and A fading in over that, with fade to black implemented as a fade in black layer on top of that correct mix.
@@ -543,7 +685,7 @@ int main()
         int newFadeAPercent = 0;
         int newFadeBPercent = 0;
 
-        switch (mixModeMenu.selectedPayload1()) {
+        switch (mixMode) {
         case blend:
         case additive: 
             newFadeAPercent = (1.0-xFade) * fadeUp * 100.0;
@@ -581,9 +723,6 @@ int main()
             debug->printf("xFade = %3f   fadeUp = %3f \r\n", xFadeAINCached, fadeUpAINCached);
             debug->printf("xFade = %3f   fadeUp = %3f   fadeA% = %i   fadeB% = %i \r\n", xFade, fadeUp, fadeAPercent, fadeBPercent);
         }
-        
-        // END OF LOOP - Reset
-        tapLeftPrevious = tapLeft;
-        tapRightPrevious = tapRight;
+
     }
 }

@@ -67,8 +67,10 @@ public:
     
     std::string title;
     
-    void operator = (int newIndex) {
+    // not carried into subclass... whats the c++ way of doing this?
+    SPKMenu& operator = (const int &newIndex) {
         selected = newIndex;
+        return *this;
     }
     
     void operator ++ () {
@@ -143,7 +145,13 @@ public:
     int32_t selectedPayload2() {
         return payload2[selected.index()];
     }
-        
+    
+    SPKMenuPayload& operator = (const int &newIndex) {
+        selected = newIndex;
+        return *this;
+    }
+    
+               
 private:
     vector<int32_t> payload1;
     vector<int32_t> payload2;

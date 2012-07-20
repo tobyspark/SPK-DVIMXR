@@ -203,7 +203,7 @@ void processDMXIn(float &xFade, float &fadeUp) {
     std::stringstream statusMessage;
 
     int xFadeDMX = dmx->get(kDMXInChannelXFade);
-    int fadeUpDMX = dmx->get(kDMXInChannelXFade);
+    int fadeUpDMX = dmx->get(kDMXInChannelFadeUp);
 
     xFade = (float)xFadeDMX/255;
     fadeUp = (float)fadeUpDMX/255;

@@ -1,23 +1,46 @@
-// *SPARK D-FUSER
-// A project by *spark audio-visual
-//
-// 'DJ' controller styke RS232 Control for TV-One products
-// Good for 1T-C2-750, others will need some extra work
-//
-// Copyright *spark audio-visual 2009-2011
-//
-// v10 - Port to mBed, keying redux - Apr'11
-// v11 - Sign callbacks, code clean-up - Apr'11
-// v12 - TVOne header split into two: defines and mbed class. v002 header updates pulled down. Removed sign callbacks, rewrite of debug and signing. - Apr'11
-// v13 - Menu system for Resolution + Keying implemented, it writing to debug, it sending TVOne commands - Apr'11
-// v14 - Fixes for new PCB - Oct'11
-// v15 - TBZ PCB, OLED - Mar'12
-// v16 - Comms menu, OSC, ArtNet - April'12
-// v17 - RJ45 - May'12
-// v18 - DMX - July'12
-// vxx - TODO: EDID upload from USB mass storage
-// vxx - TODO: EDID creation from resolution
+/* *SPARK D-FUSER
+ * A project by Toby Harris
+ *
+ * 'DJ' controller styke RS232 Control for TV-One products
+ * Good for 1T-C2-750, others will need some extra work
+ *
+ * www.sparkav.co.uk/dvimixer
+ */
 
+/* Copyright (c) 2011 Toby Harris, MIT License
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy of this software 
+ * and associated documentation files (the "Software"), to deal in the Software without restriction, 
+ * including without limitation the rights to use, copy, modify, merge, publish, distribute, 
+ * sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is 
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all copies or 
+ * substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING 
+ * BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND 
+ * NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, 
+ * DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, 
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ */
+ 
+/* ROADMAP / HISTORY
+ * v10 - Port to mBed, keying redux - Apr'11
+ * v11 - Sign callbacks, code clean-up - Apr'11
+ * v12 - TVOne header split into two: defines and mbed class. v002 header updates pulled down. Removed sign callbacks, rewrite of debug and signing. - Apr'11
+ * v13 - Menu system for Resolution + Keying implemented, it writing to debug, it sending TVOne commands - Apr'11
+ * v14 - Fixes for new PCB - Oct'11
+ * v15 - TBZ PCB, OLED - Mar'12
+ * v16 - Comms menu, OSC, ArtNet - April'12
+ * v17 - RJ45 - May'12
+ * v18 - DMX - July'12
+ * vxx - TODO: Keying values load from USB mass storage
+ * vxx - TODO: Defaults load/save from USB mass storage
+ * vxx - TODO: EDID upload from USB mass storage
+ * vxx - TODO: EDID creation from resolution
+ */
+ 
 #include "mbed.h"
 
 #include "spk_tvone_mbed.h"
@@ -190,16 +213,16 @@ void processOSC(float &xFade, float &fadeUp) {
     
 }
 
-void processArtNet(float &xFade, float &fadeUp) {
-
+void processArtNet(float &xFade, float &fadeUp) 
+{
     screen.clearBufferRow(kCommsStatusLine);
     screen.textToBuffer("ArtNet activity", kCommsStatusLine);
     screen.sendBuffer();
     if (debug) debug->printf("ArtNet activity");
 }
 
-void processDMXIn(float &xFade, float &fadeUp) {
-
+void processDMXIn(float &xFade, float &fadeUp) 
+{
     std::stringstream statusMessage;
 
     int xFadeDMX = dmx->get(kDMXInChannelXFade);
@@ -215,8 +238,8 @@ void processDMXIn(float &xFade, float &fadeUp) {
     if (debug) debug->printf(statusMessage.str().c_str());
 }
 
-void processDMXOut(float &xFade, float &fadeUp) {
-
+void processDMXOut(float &xFade, float &fadeUp) 
+{
     std::stringstream statusMessage;
 
     int xFadeDMX = xFade*255;
@@ -232,7 +255,8 @@ void processDMXOut(float &xFade, float &fadeUp) {
     if (debug) debug->printf(statusMessage.str().c_str());
 }
 
-inline float fadeCalc (const float AIN, const float tolerance) {
+inline float fadeCalc (const float AIN, const float tolerance) 
+{
     float pos ;
     if (AIN < tolerance) pos = 0;
     else if (AIN > 1.0 - tolerance) pos = 1;
@@ -241,7 +265,8 @@ inline float fadeCalc (const float AIN, const float tolerance) {
     return pos;
 }
 
-bool setKeyParamsTo(int index) {   
+bool setKeyParamsTo(int index) 
+{   
     // Only spend the time uploading six parameters if we need to
     // Might want to bounds check here
     
@@ -352,8 +377,8 @@ int main()
 
     //// MIXER RUN
 
-    while (1) {
-
+    while (1) 
+    {
         //// Task background things
         if (ethernet && rj45Mode == rj45Ethernet)
         {
@@ -701,7 +726,8 @@ int main()
         }            
         
         // Send to TVOne if percents have changed
-        if (newFadeAPercent != fadeAPercent) {
+        if (newFadeAPercent != fadeAPercent) 
+        {
             fadeAPercent = newFadeAPercent;
             updateFade = true;
             
@@ -709,7 +735,8 @@ int main()
             tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustWindowsMaxFadeLevel, fadeAPercent);
         }
 
-        if (newFadeBPercent != fadeBPercent) {
+        if (newFadeBPercent != fadeBPercent) 
+        {
             fadeBPercent = newFadeBPercent;
             updateFade = true;
             
@@ -717,7 +744,8 @@ int main()
             tvOne.command(0, kTV1WindowIDB, kTV1FunctionAdjustWindowsMaxFadeLevel, fadeBPercent);
         }
 
-        if (updateFade && debug) {
+        if (updateFade && debug) 
+        {
             debug->printf("\r\n"); 
             //debug->printf("xFade = %3f   fadeUp = %3f \r\n", xFadeAIN.read(), fadeUpAIN.read());
             debug->printf("xFade = %3f   fadeUp = %3f \r\n", xFadeAINCached, fadeUpAINCached);

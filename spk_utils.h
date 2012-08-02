@@ -1,3 +1,9 @@
+// *SPARK D-FUSER
+// A project by Toby Harris
+// Copyright *spark audio-visual 2012
+//
+// SPK_UTILS provides utility classes for the main SPK-DVIMXR codebase, most significantly the menu system.
+
 #include <string>
 #include <vector>
 

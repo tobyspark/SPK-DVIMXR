@@ -1,6 +1,8 @@
-// *spark audio-visual
-// OLED display using SSD1305 driver
+// *SPARK D-FUSER
+// A project by Toby Harris
 // Copyright *spark audio-visual 2012
+//
+// SPK_OLED_GFX encodes the bitmap font and images for driving the unit's display.
 
 #ifndef SPK_OLED_GFX_h
 #define SPK_OLED_GFX_h

@@ -1,5 +1,6 @@
 // *SPARK D-FUSER
-// A project by *spark audio-visual
+// A project by Toby Harris
+// Copyright *spark audio-visual 2012
 //
 // spkRotaryEncoder extends mRotaryEncoder to return the change on pot state since last queried
 // This allows the encoder to be polled when the host program is ready, and return info suitable for driving a TVOne style menu

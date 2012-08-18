@@ -171,7 +171,7 @@ int keyerParamsSet = -1; // last keyParams index uploaded to unit
 int keyerParams[2][6] = 
 {
     {0, 18, 128, 129, 128, 129}, // lumakey
-    {41, 42, 240, 241, 109, 110} // chroma on blue
+    {30, 35, 237, 242, 114, 121} // chroma on blue
     // ...
 };
 
@@ -270,7 +270,7 @@ bool setKeyParamsTo(int index)
     // Only spend the time uploading six parameters if we need to
     // Might want to bounds check here
     
-    bool ok = false;
+    bool ok;
     
     if (index != keyerParamsSet)
     {
@@ -282,7 +282,11 @@ bool setKeyParamsTo(int index)
         ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerMaxV, keyerParams[index][5]);
         
         keyerParamsSet = index;
-    } 
+    }
+    else
+    {
+        ok = true;
+    }
     
     return ok;
 }
@@ -347,7 +351,7 @@ int main()
     
     // TVOne setup
     
-    bool ok = false;
+    bool ok = true;
     
     // horrid, horrid HDCP
     ok = tvOne.setHDCPOff();
@@ -475,7 +479,7 @@ int main()
             {
                 mixMode = mixModeMenu.selectedPayload1();
             
-                bool ok = false;
+                bool ok = true;
                 std::string sentOK;
                 std::stringstream sentMSG;
             
@@ -517,7 +521,7 @@ int main()
             }
             else if (selectedMenu == &resolutionMenu)
             {
-                bool ok = false;
+                bool ok = true;
                 
                 ok =       tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustOutputsOutputResolution, resolutionMenu.selectedPayload1());
                 ok = ok && tvOne.command(kTV1SourceRGB1, kTV1WindowIDA, kTV1FunctionAdjustSourceEDID, resolutionMenu.selectedPayload2());
@@ -702,9 +706,6 @@ int main()
         {
             processDMXOut(xFade, fadeUp);
         }
-
-        // WISH: Really, we should have B at 100% and A fading in over that, with fade to black implemented as a fade in black layer on top of that correct mix.
-        // There is no way to implement that though, and the alphas get messy, so this is the only way (afaik).
         
         // Calculate new A&B fade percents
         int newFadeAPercent = 0;
@@ -712,7 +713,21 @@ int main()
 
         switch (mixMode) {
         case blend:
-        case additive: 
+            if (fadeUp < 1.0)
+            {
+                // we need to set fade level of both windows as there is no way AFAIK to implement fade to black as a further window on top of A&B
+                newFadeAPercent = (1.0-xFade) * fadeUp * 100.0;
+                newFadeBPercent = xFade * fadeUp * 100.0;
+            }
+            else
+            {
+                // we can optimise and just fade A in and out over a fully up B, doubling the rate of fadeA commands sent.
+                newFadeAPercent = (1.0-xFade) * 100.0;
+                newFadeBPercent = 100.0;
+            }
+            break;
+        case additive:
+            // we need to set fade level of both windows according to the fade curve profile (yet to implement - to do when tvone supply additive capability)
             newFadeAPercent = (1.0-xFade) * fadeUp * 100.0;
             newFadeBPercent = xFade * fadeUp * 100.0;
             break;
@@ -726,7 +741,8 @@ int main()
         }            
         
         // Send to TVOne if percents have changed
-        if (newFadeAPercent != fadeAPercent) 
+        // We want to send the higher first, otherwise black flashes can happen on taps
+        if (newFadeAPercent != fadeAPercent && newFadeAPercent >= newFadeBPercent) 
         {
             fadeAPercent = newFadeAPercent;
             updateFade = true;
@@ -742,6 +758,15 @@ int main()
             
             fadeBPO = fadeBPercent / 100.0;
             tvOne.command(0, kTV1WindowIDB, kTV1FunctionAdjustWindowsMaxFadeLevel, fadeBPercent);
+        }
+
+        if (newFadeAPercent != fadeAPercent && newFadeAPercent < newFadeBPercent) 
+        {
+            fadeAPercent = newFadeAPercent;
+            updateFade = true;
+            
+            fadeAPO = fadeAPercent / 100.0;
+            tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustWindowsMaxFadeLevel, fadeAPercent);
         }
 
         if (updateFade && debug) 

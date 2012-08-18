@@ -36,6 +36,7 @@
  * v17 - RJ45 - May'12
  * v18 - DMX - July'12
  * vxx - TODO: Keying values load from USB mass storage
+ * vxx - TODO: Set keying values from controller, requires a guided, step-through process for user
  * vxx - TODO: Defaults load/save from USB mass storage
  * vxx - TODO: EDID upload from USB mass storage
  * vxx - TODO: EDID creation from resolution

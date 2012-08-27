@@ -49,6 +49,7 @@
 #include "spk_mRotaryEncoder.h"
 #include "spk_oled_ssd1305.h"
 #include "spk_oled_gfx.h"
+#include "spk_settings.h"
 #include "EthernetNetIf.h"
 #include "mbedOSC.h"
 #include "DmxArtNet.h"
@@ -103,6 +104,8 @@
 #define kDMXOutChannelXFade 0
 #define kDMXOutChannelFadeUp 1
 
+#define kSPKDFSettingsFilename "SPKDF-Settings.txt"
+
 //// DEBUG
 
 // Comment out one or the other...
@@ -133,13 +136,16 @@ SPKTVOne tvOne(kMBED_RS232_TTLTX, kMBED_RS232_TTLRX, LED3, LED4, debug);
 // SPKDisplay(PinName mosi, PinName clk, PinName cs, PinName dc, PinName res, Serial *debugSerial = NULL);
 SPKDisplay screen(kMBED_OLED_MOSI, kMBED_OLED_SCK, kMBED_OLED_CS, kMBED_OLED_DC, kMBED_OLED_RES, debug);
 
+// Saved Settings
+SPKSettings settings;
+
 // Menu 
 SPKMenu *selectedMenu;
 SPKMenu *lastSelectedMenu;
 SPKMenuOfMenus mainMenu;
 SPKMenuPayload resolutionMenu;
 SPKMenuPayload mixModeMenu;
-enum { blend, additive, lumaKey, chromaKey1, chromaKey2, chromaKey3 }; // additive will require custom TVOne firmware.
+enum { blend, additive, key }; // additive will require custom TVOne firmware.
 int mixMode = blend;
 SPKMenuPayload commsMenu;
 enum { commsNone, commsOSC, commsArtNet, commsDMXIn, commsDMXOut};
@@ -167,14 +173,6 @@ bool tapLeftWasFirstPressed = false;
 
 // Key mode parameters
 int keyerParamsSet = -1; // last keyParams index uploaded to unit 
-// {lumakey, chroma on blue [, to be extended as needed] }
-// {minY, maxY, minU, maxU, minV, maxV }
-int keyerParams[2][6] = 
-{
-    {0, 18, 128, 129, 128, 129}, // lumakey
-    {30, 35, 237, 242, 114, 121} // chroma on blue
-    // ...
-};
 
 void processOSC(float &xFade, float &fadeUp) {
     std::stringstream statusMessage;
@@ -275,12 +273,12 @@ bool setKeyParamsTo(int index)
     
     if (index != keyerParamsSet)
     {
-        ok =       tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerMinY, keyerParams[index][0]); 
-        ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerMaxY, keyerParams[index][1]); 
-        ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerMinU, keyerParams[index][2]); 
-        ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerMaxU, keyerParams[index][3]); 
-        ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerMinV, keyerParams[index][4]); 
-        ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerMaxV, keyerParams[index][5]);
+        ok =       tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerMinY, settings.keyerParamSet(index)[0]); 
+        ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerMaxY, settings.keyerParamSet(index)[1]); 
+        ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerMinU, settings.keyerParamSet(index)[2]); 
+        ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerMaxU, settings.keyerParamSet(index)[3]); 
+        ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerMinV, settings.keyerParamSet(index)[4]); 
+        ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerMaxV, settings.keyerParamSet(index)[5]);
         
         keyerParamsSet = index;
     }
@@ -312,11 +310,16 @@ int main()
     screen.textToBuffer("SW beta.18",1);
     screen.sendBuffer();
     
+    // Load saved settings
+    settings.load(kSPKDFSettingsFilename);
+    
     // Set menu structure
     mixModeMenu.title = "Mix Mode";
     mixModeMenu.addMenuItem("Blend", blend, 0);
-    mixModeMenu.addMenuItem("LumaKey", lumaKey, 0);
-    mixModeMenu.addMenuItem("ChromaKey - Blue", chromaKey1, 0);
+    for (int i=0; i < settings.keyerSetCount(); i++)
+    {
+        mixModeMenu.addMenuItem(settings.keyerParamName(i), key+i, 0);
+    }
  
     resolutionMenu.title = "Resolution";
     resolutionMenu.addMenuItem(kTV1ResolutionDescriptionVGA, kTV1ResolutionVGA, 5);
@@ -484,34 +487,22 @@ int main()
                 std::string sentOK;
                 std::stringstream sentMSG;
             
-                // Set keying parameters
-                switch (mixModeMenu.selectedPayload1()) {
-                case lumaKey:
-                    ok = setKeyParamsTo(0);
-                    sentMSG << "Keyer Params 0, ";
-                    break;
-                case chromaKey1:
-                    ok = setKeyParamsTo(1);
-                    sentMSG << "Keyer Params 1, ";
-                    break;
-                }
-
-                // Set keying on or off
-                switch (mixModeMenu.selectedPayload1()) {
-                case blend:
-                case additive:
+                // Set Keyer
+                if (mixModeMenu.selectedPayload1() < key)
+                {
                     ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerEnable, false);
-                    sentMSG << "Keyer Off";
-                    break;
-                case lumaKey:
-                case chromaKey1:
-                case chromaKey2:
-                case chromaKey3:
+                    sentMSG << "Keyer Off";                
+                }
+                else
+                {
                     ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerEnable, true);
                     sentMSG << "Keyer On";
-                    break;
+                    
+                    int index = mixModeMenu.selectedPayload1() - key;
+                    ok = ok && setKeyParamsTo(index);
+                    sentMSG << " with " << index;
                 }
-                
+
                 if (ok) sentOK = "Sent:";
                 else sentOK = "Send Error:";
                 
@@ -712,8 +703,8 @@ int main()
         int newFadeAPercent = 0;
         int newFadeBPercent = 0;
 
-        switch (mixMode) {
-        case blend:
+        if (mixMode == blend) 
+        {
             if (fadeUp < 1.0)
             {
                 // we need to set fade level of both windows as there is no way AFAIK to implement fade to black as a further window on top of A&B
@@ -726,19 +717,17 @@ int main()
                 newFadeAPercent = (1.0-xFade) * 100.0;
                 newFadeBPercent = 100.0;
             }
-            break;
-        case additive:
+        }
+        else if (mixMode == additive)
+        {
             // we need to set fade level of both windows according to the fade curve profile (yet to implement - to do when tvone supply additive capability)
             newFadeAPercent = (1.0-xFade) * fadeUp * 100.0;
             newFadeBPercent = xFade * fadeUp * 100.0;
-            break;
-        case lumaKey:
-        case chromaKey1:
-        case chromaKey2:
-        case chromaKey3:
+        }
+        else if (mixMode >= key)
+        {
             newFadeAPercent = (1.0-xFade) * fadeUp * 100.0;
             newFadeBPercent = fadeUp * 100.0;
-            break;
         }            
         
         // Send to TVOne if percents have changed

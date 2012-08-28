@@ -145,11 +145,14 @@ SPKMenu *lastSelectedMenu;
 SPKMenuOfMenus mainMenu;
 SPKMenuPayload resolutionMenu;
 SPKMenuPayload mixModeMenu;
+SPKMenuPayload advancedMenu;
+
 enum { blend, additive, key }; // additive will require custom TVOne firmware.
 int mixMode = blend;
 SPKMenuPayload commsMenu;
 enum { commsNone, commsOSC, commsArtNet, commsDMXIn, commsDMXOut};
 int commsMode = commsNone;
+enum { advancedHDCPOn, advancedHDCPOff };
 
 // RJ45 Comms
 enum { rj45Ethernet = 0, rj45DMX = 1}; // These values from circuit
@@ -340,10 +343,14 @@ int main()
     commsMenu.addMenuItem("DMX In", commsDMXIn, 0);
     commsMenu.addMenuItem("DMX Out", commsDMXOut, 0);
 
+    advancedMenu.title = "Processor Advanced"; 
+    advancedMenu.addMenuItem("HDCP Off", advancedHDCPOff, 0);
+
     mainMenu.title = "Main Menu";
     mainMenu.addMenuItem(&mixModeMenu);
     mainMenu.addMenuItem(&resolutionMenu);
     mainMenu.addMenuItem(&commsMenu);
+    mainMenu.addMenuItem(&advancedMenu);
     
     selectedMenu = &mainMenu;
     lastSelectedMenu = &mainMenu;    
@@ -353,16 +360,9 @@ int main()
     fadeAPO.period(0.001);
     fadeBPO.period(0.001);
     
-    // TVOne setup
+    // TODO: Test for TVOne connectivity here and display in status line
     
-    bool ok = true;
-    
-    // horrid, horrid HDCP
-    ok = tvOne.setHDCPOff();
-
-    std::string sendOK = ok ? "Sent: HDCP Off" : "Send Error: HDCP Off";
-
-    // display menu and framing lines
+    // Display menu and framing lines
     screen.horizLineToBuffer(kMenuLine1*pixInPage - 1);
     screen.clearBufferRow(kMenuLine1);
     screen.textToBuffer(selectedMenu->title, kMenuLine1);
@@ -373,7 +373,6 @@ int main()
     screen.clearBufferRow(kCommsStatusLine);
     screen.textToBuffer(commsMenu.selectedString(), kCommsStatusLine);
     screen.clearBufferRow(kTVOneStatusLine);
-    screen.textToBuffer(sendOK, kTVOneStatusLine);
     screen.sendBuffer();
 
 
@@ -623,6 +622,20 @@ int main()
                                 
                 screen.clearBufferRow(kCommsStatusLine);
                 screen.textToBuffer(commsTypeString + commsStatus.str(), kCommsStatusLine);
+            }
+            else if (selectedMenu == &advancedMenu)
+            {
+                if (advancedMenu.selectedPayload1() == advancedHDCPOff)
+                {
+                    bool ok = false;
+                    
+                    ok = tvOne.setHDCPOff();
+                    
+                    std::string sendOK = ok ? "Sent: HDCP Off" : "Send Error: HDCP Off";
+                    
+                    screen.clearBufferRow(kTVOneStatusLine);
+                    screen.textToBuffer(sendOK, kTVOneStatusLine);
+                }
             }
             else
             {

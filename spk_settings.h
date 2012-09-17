@@ -5,6 +5,15 @@
 #define kKeyerParam2Set     30, 35, 237, 242, 114, 121
 
 #include "mbed.h"
+#include <string>
+#include <vector>
+
+// CRAZY: When this file is used in a test program, doesn't need the extern to compile, and works perfectly.
+// When this file is used in SPK-DVIMXR, requires the extern to compile and crashes on iniparser_load
+extern "C" 
+{
+#include "iniparser.h"
+}
 
 class SPKSettings {
 public:
@@ -19,7 +28,7 @@ public:
         keyerParamSets.push_back(paramSet2);
     }
     
-    std::string keyerParamName (int index)
+    string keyerParamName (int index)
     {
         // TODO: Bounds check and return out of bounds name
         return keyerParamNames[index];
@@ -35,17 +44,95 @@ public:
         return keyerParamSets.size();
     }
     
-    bool        load(std::string filename)
+    bool        load(string filename)
     {
         bool success = false;
+
+        local = new LocalFileSystem("local");
+        string filePath("/local/");
+        filePath += filename;
+
+        dictionary* settings = iniparser_load(filePath.c_str());
+            
+        // KEYER
+        {
+            int counter = 1;
+            
+            bool keyParamReadOK = true;
+            bool keyParamCleared = false;
+            
+            char* failString = "Failed to read";
+            int failInt = -1;
+            
+            // Loop through [Key1,2,...,99] sections
+            while(keyParamReadOK)
+            {
+                int     paramSet[6];
+                char*   paramName;
+                
+                char key[11];
         
-        // TODO!
+                sprintf(key, "Key%i:Name", counter);
+                paramName = iniparser_getstring(settings, key, failString);
+                keyParamReadOK = keyParamReadOK && strcmp(paramName, failString);
+                       
+                sprintf(key, "Key%i:MinY", counter);
+                paramSet[0] = iniparser_getint(settings, key, failInt);
+                keyParamReadOK = keyParamReadOK && (paramSet[0] != failInt);
+
+                sprintf(key, "Key%i:MaxY", counter);
+                paramSet[1] = iniparser_getint(settings, key, failInt);
+                keyParamReadOK = keyParamReadOK && (paramSet[1] != failInt);
+                
+                sprintf(key, "Key%i:MinU", counter);
+                paramSet[2] = iniparser_getint(settings, key, failInt);
+                keyParamReadOK = keyParamReadOK && (paramSet[2] != failInt);
+                
+                sprintf(key, "Key%i:MaxU", counter);
+                paramSet[3] = iniparser_getint(settings, key, failInt);
+                keyParamReadOK = keyParamReadOK && (paramSet[3] != failInt);
+                
+                sprintf(key, "Key%i:MinV", counter);
+                paramSet[4] = iniparser_getint(settings, key, failInt);
+                keyParamReadOK = keyParamReadOK && (paramSet[4] != failInt);
+                
+                sprintf(key, "Key%i:MaxV", counter);
+                paramSet[5] = iniparser_getint(settings, key, failInt);
+                keyParamReadOK = keyParamReadOK && (paramSet[5] != failInt);
+                
+                // If all parameters have been read successfully
+                if (keyParamReadOK)
+                {
+
+                    // If this is the first time through, clear old values
+                    if (!keyParamCleared)
+                    {
+                        keyerParamNames.clear();
+                        keyerParamSets.clear();
+                        keyParamCleared = true;
+                    }
+                
+                    // Apply settings
+                    keyerParamNames.push_back(paramName);
+                    keyerParamSets.push_back(paramSet);
+                    
+                    // We've successfully read a keyer param set, so should return true;
+                    success = true;
+                }
+                
+                counter++;
+            }
+        }        
+
+        iniparser_freedict(settings);
+        
+        delete local;
         
         return success;
     }
     
 protected:
     LocalFileSystem *local;
-    std::vector<int*> keyerParamSets;
-    std::vector<std::string> keyerParamNames;
+    vector<int*> keyerParamSets;
+    vector<string> keyerParamNames;
 };

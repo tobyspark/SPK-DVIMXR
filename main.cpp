@@ -35,6 +35,7 @@
  * v16 - Comms menu, OSC, ArtNet - April'12
  * v17 - RJ45 - May'12
  * v18 - DMX - July'12
+ * v19 - TVOne mixing comms further optimised - August'12
  * vxx - TODO: Keying values load from USB mass storage
  * vxx - TODO: Set keying values from controller, requires a guided, step-through process for user
  * vxx - TODO: Defaults load/save from USB mass storage
@@ -56,6 +57,8 @@
 #include "DMX.h"
 
 #include <sstream>
+
+#define kSPKDFSoftwareVersion "beta.19"
 
 // MBED PINS
 
@@ -104,7 +107,8 @@
 #define kDMXOutChannelXFade 0
 #define kDMXOutChannelFadeUp 1
 
-#define kSPKDFSettingsFilename "SPKDF-Settings.txt"
+// 8.3 format filename only, no subdirs
+#define kSPKDFSettingsFilename "SPKDF.ini"
 
 //// DEBUG
 
@@ -310,12 +314,16 @@ int main()
     // Splash screen
     screen.imageToBuffer(spkDisplayLogo);
     screen.textToBuffer("SPK:D-Fuser",0);
-    screen.textToBuffer("SW beta.18",1);
+    screen.textToBuffer(string("SW ") + kSPKDFSoftwareVersion,1);
     screen.sendBuffer();
     
     // Load saved settings
-    settings.load(kSPKDFSettingsFilename);
-    
+/* CRAZY, see note in spk_settings.h   
+    if (settings.load(kSPKDFSettingsFilename)) 
+    {screen.textToBuffer("Settings Read",2); screen.sendBuffer();}
+    else 
+    {screen.textToBuffer("Settings NOT Read",2); screen.sendBuffer();}
+*/    
     // Set menu structure
     mixModeMenu.title = "Mix Mode";
     mixModeMenu.addMenuItem("Blend", blend, 0);

@@ -116,6 +116,10 @@
 //Serial *debug = new Serial(USBTX, USBRX); // For debugging via USB serial
 Serial *debug = NULL; // For release (no debugging)
 
+//// SOFT RESET
+
+extern "C" void mbed_reset();
+
 //// mBED PIN ASSIGNMENTS
 
 // Inputs
@@ -151,12 +155,12 @@ SPKMenuPayload resolutionMenu;
 SPKMenuPayload mixModeMenu;
 SPKMenuPayload advancedMenu;
 
-enum { blend, additive, key }; // additive will require custom TVOne firmware.
-int mixMode = blend;
+enum { mixBlend, mixAdditive, mixKey }; // additive will require custom TVOne firmware.
+int mixMode = mixBlend;
 SPKMenuPayload commsMenu;
 enum { commsNone, commsOSC, commsArtNet, commsDMXIn, commsDMXOut};
 int commsMode = commsNone;
-enum { advancedHDCPOn, advancedHDCPOff };
+enum { advancedHDCPOn, advancedHDCPOff, advancedSelfTest };
 
 // RJ45 Comms
 enum { rj45Ethernet = 0, rj45DMX = 1}; // These values from circuit
@@ -326,10 +330,10 @@ int main()
 */    
     // Set menu structure
     mixModeMenu.title = "Mix Mode";
-    mixModeMenu.addMenuItem("Blend", blend, 0);
+    mixModeMenu.addMenuItem("Blend", mixBlend, 0);
     for (int i=0; i < settings.keyerSetCount(); i++)
     {
-        mixModeMenu.addMenuItem(settings.keyerParamName(i), key+i, 0);
+        mixModeMenu.addMenuItem(settings.keyerParamName(i), mixKey+i, 0);
     }
  
     resolutionMenu.title = "Resolution";
@@ -351,8 +355,10 @@ int main()
     commsMenu.addMenuItem("DMX In", commsDMXIn, 0);
     commsMenu.addMenuItem("DMX Out", commsDMXOut, 0);
 
-    advancedMenu.title = "Processor Advanced"; 
+    advancedMenu.title = "Troubleshooting"; 
     advancedMenu.addMenuItem("HDCP Off", advancedHDCPOff, 0);
+    advancedMenu.addMenuItem("HDCP On", advancedHDCPOn, 0);
+    advancedMenu.addMenuItem("Start Self-Test", advancedSelfTest, 0);
 
     mainMenu.title = "Main Menu";
     mainMenu.addMenuItem(&mixModeMenu);
@@ -495,7 +501,7 @@ int main()
                 std::stringstream sentMSG;
             
                 // Set Keyer
-                if (mixModeMenu.selectedPayload1() < key)
+                if (mixModeMenu.selectedPayload1() < mixKey)
                 {
                     ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerEnable, false);
                     sentMSG << "Keyer Off";                
@@ -505,7 +511,7 @@ int main()
                     ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerEnable, true);
                     sentMSG << "Keyer On";
                     
-                    int index = mixModeMenu.selectedPayload1() - key;
+                    int index = mixModeMenu.selectedPayload1() - mixKey;
                     ok = ok && setKeyParamsTo(index);
                     sentMSG << " with " << index;
                 }
@@ -637,12 +643,129 @@ int main()
                 {
                     bool ok = false;
                     
-                    ok = tvOne.setHDCPOff();
+                    ok = tvOne.setHDCPOn(false);
                     
                     std::string sendOK = ok ? "Sent: HDCP Off" : "Send Error: HDCP Off";
                     
                     screen.clearBufferRow(kTVOneStatusLine);
                     screen.textToBuffer(sendOK, kTVOneStatusLine);
+                }
+                else if (advancedMenu.selectedPayload1() == advancedHDCPOn)
+                {
+                    bool ok = false;
+                    
+                    ok = tvOne.setHDCPOn(true);
+                    
+                    std::string sendOK = ok ? "Sent: HDCP On" : "Send Error: HDCP On";
+                    
+                    screen.clearBufferRow(kTVOneStatusLine);
+                    screen.textToBuffer(sendOK, kTVOneStatusLine);
+                }
+                else if (advancedMenu.selectedPayload1() == advancedSelfTest)
+                {
+                    /* SELF TEST - Pixels
+                     * Clicking ‘self-test’ menu will display a solid lit screen. Check all pixels lit. 
+                     * Verified: Display
+                     */
+                    
+                    screen.imageToBuffer(spkDisplayAllPixelsOn);
+                    screen.sendBuffer();
+                    
+                    while(!menuEnc.hasPressed())
+                    {
+                        // do nothing, wait for press
+                    }
+                    
+                    /* SELF TEST - Mixing Controls
+                     * Clicking again will prompt to check crossfader, fade to black and tap buttons. Check movement of physical controls against 0.0-1.0 values on- screen. 
+                     * Verified: Mixing controls.
+                     */
+                     
+                    screen.clearBuffer();
+                    screen.textToBuffer("Self test - Mixing Controls", 0);
+  
+                    while(!menuEnc.hasPressed())
+                    {
+                        stringstream xFadeReadOut; 
+                        stringstream fadeToBlackReadOut;
+                        stringstream tapsReadOut;
+                        
+                        xFadeReadOut.precision(2);
+                        fadeToBlackReadOut.precision(2);
+                        tapsReadOut.precision(1);
+                        
+                        xFadeReadOut << "Crossfade: " << xFadeAIN.read();
+                        fadeToBlackReadOut << "Fade to black: " << fadeUpAIN.read();
+                        tapsReadOut << "Tap left: " << tapLeftDIN.read() << " right: " << tapRightDIN.read();
+                        
+                        screen.clearBufferRow(1);
+                        screen.clearBufferRow(2);
+                        screen.clearBufferRow(3);
+                        
+                        screen.textToBuffer(xFadeReadOut.str(), 1);
+                        screen.textToBuffer(fadeToBlackReadOut.str(), 2);
+                        screen.textToBuffer(tapsReadOut.str(), 3);
+                        screen.sendBuffer();
+                    }
+                    
+                    /* SELF TEST - RS232
+                     * Click the controller menu control. Should see ‘RS232 test’ prompt and test message. Ensure PC is displaying the test message. 
+                     * Verified: RS232 connection.
+                     */
+                     
+                    screen.clearBuffer();
+                    screen.textToBuffer("Self test - RS232", 0);
+                    screen.sendBuffer();
+                    
+                    while(!menuEnc.hasPressed())
+                    {
+                        screen.textToBuffer("TODO!", 1);
+                        screen.sendBuffer();
+                    }
+                    
+                    /* SELF TEST - DMX
+                     * Click the controller menu control. Should see ‘DMX test’ prompt and test message. Ensure PC is displaying the test message. 
+                     * Verified: RS485 connection and DMX library.
+                     */
+                     
+                    screen.clearBuffer();
+                    screen.textToBuffer("Self test - DMX", 0);
+                    screen.sendBuffer();
+                    
+                    while(!menuEnc.hasPressed())
+                    {
+                        screen.textToBuffer("TODO!", 1);
+                        screen.sendBuffer();
+                    }
+                    
+                    /* SELF TEST - OSC
+                     * Click the controller menu control. Should see ‘OSC test’ prompt and test message. Ensure PC is displaying the test message. 
+                     * Verified: Ethernet connection and OSC library.
+                     */
+                     
+                    screen.clearBuffer();
+                    screen.textToBuffer("Self test - DMX", 0);
+                    screen.sendBuffer();
+                    
+                    while(!menuEnc.hasPressed())
+                    {
+                        screen.textToBuffer("TODO!", 1);
+                        screen.sendBuffer();
+                    }
+
+                    /* SELF TEST - Exit!
+                     * To do this, we could just do nothing but we'd need to recreate screen and comms as they were. 
+                     * Instead, lets just restart the mbed
+                     */
+                     
+                    screen.clearBuffer();
+                    screen.textToBuffer("Self test complete", 0);
+                    screen.textToBuffer("Press to restart controller", 1);
+                    screen.sendBuffer();
+                    
+                    while(!menuEnc.hasPressed()) {}                    
+                    
+                    mbed_reset();
                 }
             }
             else
@@ -724,7 +847,7 @@ int main()
         int newFadeAPercent = 0;
         int newFadeBPercent = 0;
 
-        if (mixMode == blend) 
+        if (mixMode == mixBlend) 
         {
             if (fadeUp < 1.0)
             {
@@ -739,13 +862,13 @@ int main()
                 newFadeBPercent = 100.0;
             }
         }
-        else if (mixMode == additive)
+        else if (mixMode == mixAdditive)
         {
             // we need to set fade level of both windows according to the fade curve profile (yet to implement - to do when tvone supply additive capability)
             newFadeAPercent = (1.0-xFade) * fadeUp * 100.0;
             newFadeBPercent = xFade * fadeUp * 100.0;
         }
-        else if (mixMode >= key)
+        else if (mixMode >= mixKey)
         {
             newFadeAPercent = (1.0-xFade) * fadeUp * 100.0;
             newFadeBPercent = fadeUp * 100.0;

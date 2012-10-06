@@ -1,9 +1,3 @@
-// Parameter Set: minY, maxY, minU, maxU, minV, maxV
-#define kKeyerParam1Name    "Lumakey"
-#define kKeyerParam1Set     0, 18, 128, 129, 128, 129
-#define kKeyerParam2Name    "Chromakey - Blue"
-#define kKeyerParam2Set     30, 35, 237, 242, 114, 121
-
 #include "mbed.h"
 #include <string>
 #include <vector>
@@ -19,13 +13,63 @@ class SPKSettings {
 public:
     SPKSettings()
     {
-        int paramSet1[6] = {kKeyerParam1Set};
-        keyerParamNames.push_back(kKeyerParam1Name);
+        loadDefaults();
+    }
+    
+    void loadDefaults()
+    {
+        //// KEYS
+        
+        // Parameter Set: minY, maxY, minU, maxU, minV, maxV
+        int paramSet1[6] = {0, 18, 128, 129, 128, 129};
+        keyerParamNames.push_back("Lumakey");
         keyerParamSets.push_back(paramSet1);
         
-        int paramSet2[6] = {kKeyerParam2Set};
-        keyerParamNames.push_back(kKeyerParam2Name);
+        int paramSet2[6] = {30, 35, 237, 242, 114, 121};
+        keyerParamNames.push_back("Chromakey - Blue");
         keyerParamSets.push_back(paramSet2);
+        
+        //// RESOLUTIONS
+        
+        resolutionNames.push_back(kTV1ResolutionDescriptionVGA);
+        resolutionIndexes.push_back(kTV1ResolutionVGA);
+        resolutionEDIDIndexes.push_back(5);
+    
+        resolutionNames.push_back(kTV1ResolutionDescriptionSVGA);
+        resolutionIndexes.push_back(kTV1ResolutionSVGA);
+        resolutionEDIDIndexes.push_back(5);
+        
+        resolutionNames.push_back(kTV1ResolutionDescriptionXGAp60);
+        resolutionIndexes.push_back(kTV1ResolutionXGAp60);
+        resolutionEDIDIndexes.push_back(5);
+        
+        resolutionNames.push_back(kTV1ResolutionDescriptionWSXGAPLUSp60);
+        resolutionIndexes.push_back(kTV1ResolutionWSXGAPLUSp60);
+        resolutionEDIDIndexes.push_back(5);
+        
+        resolutionNames.push_back(kTV1ResolutionDescriptionWUXGAp60);
+        resolutionIndexes.push_back(kTV1ResolutionWUXGAp60);
+        resolutionEDIDIndexes.push_back(5);
+        
+        resolutionNames.push_back(kTV1ResolutionDescription720p60);
+        resolutionIndexes.push_back(kTV1Resolution720p60);
+        resolutionEDIDIndexes.push_back(5);
+        
+        resolutionNames.push_back(kTV1ResolutionDescription1080p60);
+        resolutionIndexes.push_back(kTV1Resolution1080p60);
+        resolutionEDIDIndexes.push_back(5);
+        
+        resolutionNames.push_back(kTV1ResolutionDescriptionDualHeadSVGAp60);
+        resolutionIndexes.push_back(kTV1ResolutionDualHeadSVGAp60);
+        resolutionEDIDIndexes.push_back(5);
+        
+        resolutionNames.push_back(kTV1ResolutionDescriptionDualHeadXGAp60);
+        resolutionIndexes.push_back(kTV1ResolutionDualHeadXGAp60);
+        resolutionEDIDIndexes.push_back(5);
+        
+        resolutionNames.push_back(kTV1ResolutionDescriptionTripleHeadVGAp60);
+        resolutionIndexes.push_back(kTV1ResolutionTripleHeadVGAp60);
+        resolutionEDIDIndexes.push_back(5);   
     }
     
     string keyerParamName (int index)
@@ -42,6 +86,27 @@ public:
     int         keyerSetCount()
     {
         return keyerParamSets.size();
+    }
+    
+        string resolutionName (int index)
+    {
+        // TODO: Bounds check and return out of bounds name
+        return resolutionNames[index];
+    }
+     
+    int32_t     resolutionIndex(int index)
+    {
+        return resolutionIndexes[index];
+    }
+    
+    int32_t     resolutionEDIDIndex(int index)
+    {
+        return resolutionEDIDIndexes[index];
+    }
+    
+    int         resolutionsCount()
+    {
+        return resolutionNames.size();
     }
     
     bool        load(string filename)
@@ -124,6 +189,62 @@ public:
             }
         }        
 
+        // RESOLUTIONS
+        {
+            int counter = 1;
+            
+            bool resolutionReadOK = true;
+            bool resolutionCleared = false;
+            
+            char* failString = "Failed to read";
+            int failInt = -1;
+            
+            // Loop through [Key1,2,...,99] sections
+            while(resolutionReadOK)
+            {
+                char*   resolutionName;
+                int     resolutionIndex;
+                int     resolutionEDIDIndex;
+                
+                char key[18];
+        
+                sprintf(key, "Resolution%i:Name", counter);
+                resolutionName = iniparser_getstring(settings, key, failString);
+                resolutionReadOK = resolutionReadOK && strcmp(resolutionName, failString);
+                       
+                sprintf(key, "Resolution%i:Number", counter);
+                resolutionIndex = iniparser_getint(settings, key, failInt);
+                resolutionReadOK = resolutionReadOK && (resolutionIndex != failInt);
+
+                sprintf(key, "Resolution%i:EDIDNumber", counter);
+                resolutionEDIDIndex = iniparser_getint(settings, key, failInt);
+                resolutionReadOK = resolutionReadOK && (resolutionEDIDIndex != failInt);
+                
+                // If all parameters have been read successfully
+                if (resolutionReadOK)
+                {
+                    // If this is the first time through, clear old values
+                    if (!resolutionCleared)
+                    {
+                        resolutionNames.clear();
+                        resolutionIndexes.clear();
+                        resolutionEDIDIndexes.clear();
+                        resolutionCleared = true;
+                    }
+                
+                    // Apply settings
+                    resolutionNames.push_back(resolutionName);
+                    resolutionIndexes.push_back(resolutionIndex);
+                    resolutionEDIDIndexes.push_back(resolutionEDIDIndex);
+                    
+                    // We've successfully read a resolution, so should return true;
+                    success = true;
+                }
+                
+                counter++;
+            }
+        }
+
         iniparser_freedict(settings);
         
         delete local;
@@ -133,6 +254,9 @@ public:
     
 protected:
     LocalFileSystem *local;
-    vector<int*> keyerParamSets;
-    vector<string> keyerParamNames;
+    vector<int*>    keyerParamSets;
+    vector<string>  keyerParamNames;
+    vector<string>  resolutionNames;
+    vector<int32_t> resolutionIndexes;
+    vector<int32_t> resolutionEDIDIndexes;
 };

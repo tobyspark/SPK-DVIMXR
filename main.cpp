@@ -113,8 +113,8 @@
 //// DEBUG
 
 // Comment out one or the other...
-//Serial *debug = new Serial(USBTX, USBRX); // For debugging via USB serial
-Serial *debug = NULL; // For release (no debugging)
+Serial *debug = new Serial(USBTX, USBRX); // For debugging via USB serial
+//Serial *debug = NULL; // For release (no debugging)
 
 //// SOFT RESET
 
@@ -160,7 +160,7 @@ int mixMode = mixBlend;
 SPKMenuPayload commsMenu;
 enum { commsNone, commsOSC, commsArtNet, commsDMXIn, commsDMXOut};
 int commsMode = commsNone;
-enum { advancedHDCPOn, advancedHDCPOff, advancedSelfTest };
+enum { advancedHDCPOn, advancedHDCPOff, advancedLoadDefaults, advancedSelfTest };
 
 // RJ45 Comms
 enum { rj45Ethernet = 0, rj45DMX = 1}; // These values from circuit
@@ -322,8 +322,10 @@ int main()
     screen.sendBuffer();
     
     // Load saved settings
+    bool settingsAreCustom = false;
 /* CRAZY, see note in spk_settings.h   
-    if (settings.load(kSPKDFSettingsFilename)) 
+    settingsAreCustom = settings.load(kSPKDFSettingsFilename);
+    if (settingsAreCustom)
     {screen.textToBuffer("Settings Read",2); screen.sendBuffer();}
     else 
     {screen.textToBuffer("Settings NOT Read",2); screen.sendBuffer();}
@@ -337,16 +339,10 @@ int main()
     }
  
     resolutionMenu.title = "Resolution";
-    resolutionMenu.addMenuItem(kTV1ResolutionDescriptionVGA, kTV1ResolutionVGA, 5);
-    resolutionMenu.addMenuItem(kTV1ResolutionDescriptionSVGA, kTV1ResolutionSVGA, 5);
-    resolutionMenu.addMenuItem(kTV1ResolutionDescriptionXGAp60, kTV1ResolutionXGAp60, 5);
-    resolutionMenu.addMenuItem(kTV1ResolutionDescriptionWSXGAPLUSp60, kTV1ResolutionWSXGAPLUSp60, 5);
-    resolutionMenu.addMenuItem(kTV1ResolutionDescriptionWUXGAp60, kTV1ResolutionWUXGAp60, 5);
-    resolutionMenu.addMenuItem(kTV1ResolutionDescription720p60, kTV1Resolution720p60, 5);
-    resolutionMenu.addMenuItem(kTV1ResolutionDescription1080p60, kTV1Resolution1080p60, 5);
-    resolutionMenu.addMenuItem(kTV1ResolutionDescriptionDualHeadSVGAp60, kTV1ResolutionDualHeadSVGAp60, 0);
-    resolutionMenu.addMenuItem(kTV1ResolutionDescriptionDualHeadXGAp60, kTV1ResolutionDualHeadXGAp60, 0);
-    resolutionMenu.addMenuItem(kTV1ResolutionDescriptionTripleHeadVGAp60, kTV1ResolutionTripleHeadVGAp60, 0);
+    for (int i=0; i < settings.resolutionsCount(); i++)
+    {
+        resolutionMenu.addMenuItem(settings.resolutionName(i), settings.resolutionIndex(i), settings.resolutionEDIDIndex(i));
+    }
 
     commsMenu.title = "Network Mode"; 
     commsMenu.addMenuItem("None", commsNone, 0);
@@ -358,6 +354,7 @@ int main()
     advancedMenu.title = "Troubleshooting"; 
     advancedMenu.addMenuItem("HDCP Off", advancedHDCPOff, 0);
     advancedMenu.addMenuItem("HDCP On", advancedHDCPOn, 0);
+    if (settingsAreCustom) advancedMenu.addMenuItem("Revert to defaults", advancedLoadDefaults, 0);
     advancedMenu.addMenuItem("Start Self-Test", advancedSelfTest, 0);
 
     mainMenu.title = "Main Menu";
@@ -661,10 +658,17 @@ int main()
                     screen.clearBufferRow(kTVOneStatusLine);
                     screen.textToBuffer(sendOK, kTVOneStatusLine);
                 }
+                else if (advancedMenu.selectedPayload1() == advancedLoadDefaults)
+                {
+                    settings.loadDefaults();
+                    
+                    screen.clearBufferRow(kTVOneStatusLine);
+                    screen.textToBuffer("Controller reverted", kTVOneStatusLine);
+                }
                 else if (advancedMenu.selectedPayload1() == advancedSelfTest)
                 {
                     /* SELF TEST - Pixels
-                     * Clicking ‘self-test’ menu will display a solid lit screen. Check all pixels lit. 
+                     * Clicking &#65533;self-test&#65533; menu will display a solid lit screen. Check all pixels lit. 
                      * Verified: Display
                      */
                     
@@ -709,7 +713,7 @@ int main()
                     }
                     
                     /* SELF TEST - RS232
-                     * Click the controller menu control. Should see ‘RS232 test’ prompt and test message. Ensure PC is displaying the test message. 
+                     * Click the controller menu control. Should see &#65533;RS232 test&#65533; prompt and test message. Ensure PC is displaying the test message. 
                      * Verified: RS232 connection.
                      */
                      
@@ -724,7 +728,7 @@ int main()
                     }
                     
                     /* SELF TEST - DMX
-                     * Click the controller menu control. Should see ‘DMX test’ prompt and test message. Ensure PC is displaying the test message. 
+                     * Click the controller menu control. Should see &#65533;DMX test&#65533; prompt and test message. Ensure PC is displaying the test message. 
                      * Verified: RS485 connection and DMX library.
                      */
                      
@@ -739,7 +743,7 @@ int main()
                     }
                     
                     /* SELF TEST - OSC
-                     * Click the controller menu control. Should see ‘OSC test’ prompt and test message. Ensure PC is displaying the test message. 
+                     * Click the controller menu control. Should see &#65533;OSC test&#65533; prompt and test message. Ensure PC is displaying the test message. 
                      * Verified: Ethernet connection and OSC library.
                      */
                      

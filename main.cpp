@@ -55,6 +55,7 @@
 #include "mbedOSC.h"
 #include "DmxArtNet.h"
 #include "DMX.h"
+#include "filter.h"
 
 #include <sstream>
 
@@ -113,8 +114,8 @@
 //// DEBUG
 
 // Comment out one or the other...
-Serial *debug = new Serial(USBTX, USBRX); // For debugging via USB serial
-//Serial *debug = NULL; // For release (no debugging)
+//Serial *debug = new Serial(USBTX, USBRX); // For debugging via USB serial
+Serial *debug = NULL; // For release (no debugging)
 
 //// SOFT RESET
 
@@ -127,6 +128,8 @@ AnalogIn xFadeAIN(kMBED_AIN_XFADE);
 AnalogIn fadeUpAIN(kMBED_AIN_FADEUP);
 DigitalIn tapLeftDIN(kMBED_DIN_TAP_L);
 DigitalIn tapRightDIN(kMBED_DIN_TAP_R);
+medianFilter xFadeFilter(9);
+medianFilter fadeUpFilter(9);
 
 SPKRotaryEncoder menuEnc(kMBED_ENC_A, kMBED_ENC_B, kMBED_ENC_SW);
 
@@ -160,7 +163,7 @@ int mixMode = mixBlend;
 SPKMenuPayload commsMenu;
 enum { commsNone, commsOSC, commsArtNet, commsDMXIn, commsDMXOut};
 int commsMode = commsNone;
-enum { advancedHDCPOn, advancedHDCPOff, advancedLoadDefaults, advancedSelfTest };
+enum { advancedHDCPOn, advancedHDCPOff, advancedConformProcessor, advancedLoadDefaults, advancedSelfTest };
 
 // RJ45 Comms
 enum { rj45Ethernet = 0, rj45DMX = 1}; // These values from circuit
@@ -178,6 +181,8 @@ const float fadeUpTolerance = 0.05;
 // A&B Fade as resolved percent
 int fadeAPercent = 0;
 int fadeBPercent = 0;
+int oldFadeAPercent = 0;
+int oldFadeBPercent = 0;
 
 // Tap button states
 bool tapLeftWasFirstPressed = false;
@@ -301,6 +306,152 @@ bool setKeyParamsTo(int index)
     return ok;
 }
 
+bool conformProcessor()
+{
+    bool ok = true;
+                    
+    int32_t on = 1;
+    int32_t off = 0;
+                    
+    // Make sure our windows exist
+    ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustWindowsEnable, on);
+    ok = ok && tvOne.command(0, kTV1WindowIDB, kTV1FunctionAdjustWindowsEnable, on);
+    ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustWindowsLayerPriority, 1); // TODO: Setting this to 4 caused controller freeze?
+    ok = ok && tvOne.command(0, kTV1WindowIDB, kTV1FunctionAdjustWindowsLayerPriority, 2);                
+        
+    // Assign inputs to windows, so that left on the crossfader is left on the processor viewed from front
+    ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustWindowsWindowSource, kTV1SourceRGB2);
+    ok = ok && tvOne.command(0, kTV1WindowIDB, kTV1FunctionAdjustWindowsWindowSource, kTV1SourceRGB1);
+    
+    // Set scaling to fit source within output, maintaining aspect ratio
+    ok = ok && tvOne.command(kTV1SourceRGB1, kTV1WindowIDA, kTV1FunctionAdjustWindowsZoomLevel, 100);
+    ok = ok && tvOne.command(kTV1SourceRGB1, kTV1WindowIDB, kTV1FunctionAdjustWindowsZoomLevel, 100);
+    ok = ok && tvOne.command(kTV1SourceRGB1, kTV1WindowIDA, kTV1FunctionAdjustWindowsShrinkEnable, off);
+    ok = ok && tvOne.command(kTV1SourceRGB1, kTV1WindowIDB, kTV1FunctionAdjustWindowsShrinkEnable, off);
+    int32_t fit = 1;
+    ok = ok && tvOne.command(kTV1SourceRGB1, kTV1WindowIDA, kTV1FunctionAdjustSourceAspectCorrect, fit);
+    ok = ok && tvOne.command(kTV1SourceRGB2, kTV1WindowIDA, kTV1FunctionAdjustSourceAspectCorrect, fit);
+    
+    // On source loss, hold on the last frame received.
+    int32_t freeze = 1;
+    ok = ok && tvOne.command(kTV1SourceRGB1, kTV1WindowIDA, kTV1FunctionAdjustSourceOnSourceLoss, freeze);
+    ok = ok && tvOne.command(kTV1SourceRGB2, kTV1WindowIDA, kTV1FunctionAdjustSourceOnSourceLoss, freeze);
+    
+    // Finally, autoset to sources?
+    //int32_t start = 1;
+    //ok = ok && tvOne.command(kTV1SourceRGB1, kTV1WindowIDA, kTV1FunctionAdjustSourceAutoSet, start);
+    //ok = ok && tvOne.command(kTV1SourceRGB2, kTV1WindowIDA, kTV1FunctionAdjustSourceAutoSet, start);
+    
+    return ok;
+}
+
+void selfTest()
+{
+    /* SELF TEST - Pixels
+     * Clicking &#65533;self-test&#65533; menu will display a solid lit screen. Check all pixels lit. 
+     * Verified: Display
+     */
+    
+    screen.imageToBuffer(spkDisplayAllPixelsOn);
+    screen.sendBuffer();
+    
+    while(!menuEnc.hasPressed())
+    {
+        // do nothing, wait for press
+    }
+    
+    /* SELF TEST - Mixing Controls
+     * Clicking again will prompt to check crossfader, fade to black and tap buttons. Check movement of physical controls against 0.0-1.0 values on- screen. 
+     * Verified: Mixing controls.
+     */
+     
+    screen.clearBuffer();
+    screen.textToBuffer("Self test - Mixing Controls", 0);
+
+    while(!menuEnc.hasPressed())
+    {
+        stringstream xFadeReadOut; 
+        stringstream fadeToBlackReadOut;
+        stringstream tapsReadOut;
+        
+        xFadeReadOut.precision(2);
+        fadeToBlackReadOut.precision(2);
+        tapsReadOut.precision(1);
+        
+        xFadeReadOut << "Crossfade: " << xFadeAIN.read();
+        fadeToBlackReadOut << "Fade to black: " << fadeUpAIN.read();
+        tapsReadOut << "Tap left: " << tapLeftDIN.read() << " right: " << tapRightDIN.read();
+        
+        screen.clearBufferRow(1);
+        screen.clearBufferRow(2);
+        screen.clearBufferRow(3);
+        
+        screen.textToBuffer(xFadeReadOut.str(), 1);
+        screen.textToBuffer(fadeToBlackReadOut.str(), 2);
+        screen.textToBuffer(tapsReadOut.str(), 3);
+        screen.sendBuffer();
+    }
+    
+    /* SELF TEST - RS232
+     * Click the controller menu control. Should see &#65533;RS232 test&#65533; prompt and test message. Ensure PC is displaying the test message. 
+     * Verified: RS232 connection.
+     */
+     
+    screen.clearBuffer();
+    screen.textToBuffer("Self test - RS232", 0);
+    screen.sendBuffer();
+    
+    while(!menuEnc.hasPressed())
+    {
+        screen.textToBuffer("TODO!", 1);
+        screen.sendBuffer();
+    }
+    
+    /* SELF TEST - DMX
+     * Click the controller menu control. Should see &#65533;DMX test&#65533; prompt and test message. Ensure PC is displaying the test message. 
+     * Verified: RS485 connection and DMX library.
+     */
+     
+    screen.clearBuffer();
+    screen.textToBuffer("Self test - DMX", 0);
+    screen.sendBuffer();
+    
+    while(!menuEnc.hasPressed())
+    {
+        screen.textToBuffer("TODO!", 1);
+        screen.sendBuffer();
+    }
+    
+    /* SELF TEST - OSC
+     * Click the controller menu control. Should see &#65533;OSC test&#65533; prompt and test message. Ensure PC is displaying the test message. 
+     * Verified: Ethernet connection and OSC library.
+     */
+     
+    screen.clearBuffer();
+    screen.textToBuffer("Self test - DMX", 0);
+    screen.sendBuffer();
+    
+    while(!menuEnc.hasPressed())
+    {
+        screen.textToBuffer("TODO!", 1);
+        screen.sendBuffer();
+    }
+
+    /* SELF TEST - Exit!
+     * To do this, we could just do nothing but we'd need to recreate screen and comms as they were. 
+     * Instead, lets just restart the mbed
+     */
+     
+    screen.clearBuffer();
+    screen.textToBuffer("Self test complete", 0);
+    screen.textToBuffer("Press to restart controller", 1);
+    screen.sendBuffer();
+    
+    while(!menuEnc.hasPressed()) {}                    
+    
+    mbed_reset();
+}
+
 int main() 
 {
     if (debug) 
@@ -354,6 +505,7 @@ int main()
     advancedMenu.title = "Troubleshooting"; 
     advancedMenu.addMenuItem("HDCP Off", advancedHDCPOff, 0);
     advancedMenu.addMenuItem("HDCP On", advancedHDCPOn, 0);
+    advancedMenu.addMenuItem("Conform Processor", advancedConformProcessor, 0);
     if (settingsAreCustom) advancedMenu.addMenuItem("Revert to defaults", advancedLoadDefaults, 0);
     advancedMenu.addMenuItem("Start Self-Test", advancedSelfTest, 0);
 
@@ -658,6 +810,15 @@ int main()
                     screen.clearBufferRow(kTVOneStatusLine);
                     screen.textToBuffer(sendOK, kTVOneStatusLine);
                 }
+                else if (advancedMenu.selectedPayload1() == advancedConformProcessor)
+                {
+                    bool ok = conformProcessor();
+                    
+                    std::string sendOK = ok ? "Conform success" : "Send Error: Conform";
+                    
+                    screen.clearBufferRow(kTVOneStatusLine);
+                    screen.textToBuffer(sendOK, kTVOneStatusLine);
+                }
                 else if (advancedMenu.selectedPayload1() == advancedLoadDefaults)
                 {
                     settings.loadDefaults();
@@ -667,109 +828,7 @@ int main()
                 }
                 else if (advancedMenu.selectedPayload1() == advancedSelfTest)
                 {
-                    /* SELF TEST - Pixels
-                     * Clicking &#65533;self-test&#65533; menu will display a solid lit screen. Check all pixels lit. 
-                     * Verified: Display
-                     */
-                    
-                    screen.imageToBuffer(spkDisplayAllPixelsOn);
-                    screen.sendBuffer();
-                    
-                    while(!menuEnc.hasPressed())
-                    {
-                        // do nothing, wait for press
-                    }
-                    
-                    /* SELF TEST - Mixing Controls
-                     * Clicking again will prompt to check crossfader, fade to black and tap buttons. Check movement of physical controls against 0.0-1.0 values on- screen. 
-                     * Verified: Mixing controls.
-                     */
-                     
-                    screen.clearBuffer();
-                    screen.textToBuffer("Self test - Mixing Controls", 0);
-  
-                    while(!menuEnc.hasPressed())
-                    {
-                        stringstream xFadeReadOut; 
-                        stringstream fadeToBlackReadOut;
-                        stringstream tapsReadOut;
-                        
-                        xFadeReadOut.precision(2);
-                        fadeToBlackReadOut.precision(2);
-                        tapsReadOut.precision(1);
-                        
-                        xFadeReadOut << "Crossfade: " << xFadeAIN.read();
-                        fadeToBlackReadOut << "Fade to black: " << fadeUpAIN.read();
-                        tapsReadOut << "Tap left: " << tapLeftDIN.read() << " right: " << tapRightDIN.read();
-                        
-                        screen.clearBufferRow(1);
-                        screen.clearBufferRow(2);
-                        screen.clearBufferRow(3);
-                        
-                        screen.textToBuffer(xFadeReadOut.str(), 1);
-                        screen.textToBuffer(fadeToBlackReadOut.str(), 2);
-                        screen.textToBuffer(tapsReadOut.str(), 3);
-                        screen.sendBuffer();
-                    }
-                    
-                    /* SELF TEST - RS232
-                     * Click the controller menu control. Should see &#65533;RS232 test&#65533; prompt and test message. Ensure PC is displaying the test message. 
-                     * Verified: RS232 connection.
-                     */
-                     
-                    screen.clearBuffer();
-                    screen.textToBuffer("Self test - RS232", 0);
-                    screen.sendBuffer();
-                    
-                    while(!menuEnc.hasPressed())
-                    {
-                        screen.textToBuffer("TODO!", 1);
-                        screen.sendBuffer();
-                    }
-                    
-                    /* SELF TEST - DMX
-                     * Click the controller menu control. Should see &#65533;DMX test&#65533; prompt and test message. Ensure PC is displaying the test message. 
-                     * Verified: RS485 connection and DMX library.
-                     */
-                     
-                    screen.clearBuffer();
-                    screen.textToBuffer("Self test - DMX", 0);
-                    screen.sendBuffer();
-                    
-                    while(!menuEnc.hasPressed())
-                    {
-                        screen.textToBuffer("TODO!", 1);
-                        screen.sendBuffer();
-                    }
-                    
-                    /* SELF TEST - OSC
-                     * Click the controller menu control. Should see &#65533;OSC test&#65533; prompt and test message. Ensure PC is displaying the test message. 
-                     * Verified: Ethernet connection and OSC library.
-                     */
-                     
-                    screen.clearBuffer();
-                    screen.textToBuffer("Self test - DMX", 0);
-                    screen.sendBuffer();
-                    
-                    while(!menuEnc.hasPressed())
-                    {
-                        screen.textToBuffer("TODO!", 1);
-                        screen.sendBuffer();
-                    }
-
-                    /* SELF TEST - Exit!
-                     * To do this, we could just do nothing but we'd need to recreate screen and comms as they were. 
-                     * Instead, lets just restart the mbed
-                     */
-                     
-                    screen.clearBuffer();
-                    screen.textToBuffer("Self test complete", 0);
-                    screen.textToBuffer("Press to restart controller", 1);
-                    screen.sendBuffer();
-                    
-                    while(!menuEnc.hasPressed()) {}                    
-                    
-                    mbed_reset();
+                    selfTest();
                 }
             }
             else
@@ -794,9 +853,18 @@ int main()
         const bool tapLeft = !tapLeftDIN;
         const bool tapRight = !tapRightDIN;
         
-        // We're going to cache the analog in reads, as have seen wierdness otherwise
-        const float xFadeAINCached = 1-xFadeAIN.read();
-        const float fadeUpAINCached = fadeUpAIN.read();
+        // We're taking a further median of the AINs on top of mbed libs v29.
+        // This takes some values from last passes and most from now. With debug off, seem to need median size > 5
+        xFadeFilter.process(xFadeAIN.read());
+        fadeUpFilter.process(fadeUpAIN.read());
+        xFadeFilter.process(xFadeAIN.read());
+        fadeUpFilter.process(fadeUpAIN.read());
+        xFadeFilter.process(xFadeAIN.read());
+        fadeUpFilter.process(fadeUpAIN.read());
+        xFadeFilter.process(xFadeAIN.read());
+        fadeUpFilter.process(fadeUpAIN.read());
+        const float xFadeAINCached = xFadeFilter.process(xFadeAIN.read());
+        const float fadeUpAINCached = fadeUpFilter.process(fadeUpAIN.read());
         
         // When a tap is depressed, we can ignore any move of the crossfader but not fade to black
         if (tapLeft || tapRight) 
@@ -878,35 +946,48 @@ int main()
             newFadeBPercent = fadeUp * 100.0;
         }            
         
-        // Send to TVOne if percents have changed
+        //// TASK: Send to TVOne if percents have changed
+        
+        // No amount of median filtering is stopping flipflopping between two adjacent percents, so...
+        bool fadeAPercentHasChanged;
+        bool fadeBPercentHasChanged;
+        if (oldFadeAPercent == newFadeAPercent && (newFadeAPercent == fadeAPercent - 1 || newFadeAPercent == fadeAPercent + 1))
+            fadeAPercentHasChanged = false;
+        else
+            fadeAPercentHasChanged = newFadeAPercent != fadeAPercent;
+        if (oldFadeBPercent == newFadeBPercent && (newFadeBPercent == fadeBPercent - 1 || newFadeBPercent == fadeBPercent + 1))
+            fadeBPercentHasChanged = false;
+        else
+            fadeBPercentHasChanged = newFadeBPercent != fadeBPercent;
+        
         // We want to send the higher first, otherwise black flashes can happen on taps
-        if (newFadeAPercent != fadeAPercent && newFadeAPercent >= newFadeBPercent) 
+        if (fadeAPercentHasChanged && newFadeAPercent >= newFadeBPercent) 
         {
+            oldFadeAPercent = fadeAPercent;
             fadeAPercent = newFadeAPercent;
             updateFade = true;
             
             fadeAPO = fadeAPercent / 100.0;
             tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustWindowsMaxFadeLevel, fadeAPercent);
         }
-
-        if (newFadeBPercent != fadeBPercent) 
+        if (fadeBPercentHasChanged) 
         {
+            oldFadeBPercent = fadeBPercent;
             fadeBPercent = newFadeBPercent;
             updateFade = true;
             
             fadeBPO = fadeBPercent / 100.0;
             tvOne.command(0, kTV1WindowIDB, kTV1FunctionAdjustWindowsMaxFadeLevel, fadeBPercent);
         }
-
-        if (newFadeAPercent != fadeAPercent && newFadeAPercent < newFadeBPercent) 
+        if (fadeAPercentHasChanged && newFadeAPercent < newFadeBPercent) 
         {
+            oldFadeAPercent = fadeAPercent; 
             fadeAPercent = newFadeAPercent;
             updateFade = true;
             
             fadeAPO = fadeAPercent / 100.0;
             tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustWindowsMaxFadeLevel, fadeAPercent);
         }
-
         if (updateFade && debug) 
         {
             debug->printf("\r\n"); 
@@ -914,6 +995,5 @@ int main()
             debug->printf("xFade = %3f   fadeUp = %3f \r\n", xFadeAINCached, fadeUpAINCached);
             debug->printf("xFade = %3f   fadeUp = %3f   fadeA% = %i   fadeB% = %i \r\n", xFade, fadeUp, fadeAPercent, fadeBPercent);
         }
-
     }
 }

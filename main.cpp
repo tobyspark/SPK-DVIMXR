@@ -312,6 +312,10 @@ bool conformProcessor()
                     
     int32_t on = 1;
     int32_t off = 0;
+    
+    // Independent output
+    ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustOutputsOutputEnable, on);
+    ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustOutputsLockMethod, off);
                     
     // Make sure our windows exist
     ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustWindowsEnable, on);
@@ -523,7 +527,23 @@ int main()
     fadeAPO.period(0.001);
     fadeBPO.period(0.001);
     
-    // TODO: Test for TVOne connectivity here and display in status line
+    // Test for TV One connectivity and determine unit type
+    // Ah. My 750 reports zero for these types, both over RS232 and on OSD.
+    if (false)
+    {
+        int ack[SPKTVOne::standardAckLength];
+        
+        // kTV1FunctionReadSoftwareVersion
+        // kTV1FunctionReadProductType
+        // kTV1FunctionReadBoardType
+        
+        bool ok = tvOne.command(SPKTVOne::readCommand, ack, SPKTVOne::standardAckLength, 0, kTV1WindowIDA, kTV1FunctionReadSoftwareVersion, 0);
+        
+        printf("\r\nOK: %s\r\n", ok ? "true" : "false");
+        
+        for (int i =0; i<20; i++) printf("%c", ack[i]);
+        printf("\r\n");
+    }
     
     // Display menu and framing lines
     screen.horizLineToBuffer(kMenuLine1*pixInPage - 1);
@@ -812,6 +832,10 @@ int main()
                 }
                 else if (advancedMenu.selectedPayload1() == advancedConformProcessor)
                 {
+                    screen.clearBufferRow(kTVOneStatusLine);
+                    screen.textToBuffer("Conforming...", kTVOneStatusLine);
+                    screen.sendBuffer();
+                    
                     bool ok = conformProcessor();
                     
                     std::string sendOK = ok ? "Conform success" : "Send Error: Conform";

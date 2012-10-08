@@ -316,8 +316,8 @@ bool conformProcessor()
     // Make sure our windows exist
     ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustWindowsEnable, on);
     ok = ok && tvOne.command(0, kTV1WindowIDB, kTV1FunctionAdjustWindowsEnable, on);
-    ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustWindowsLayerPriority, 1); // TODO: Setting this to 4 caused controller freeze?
-    ok = ok && tvOne.command(0, kTV1WindowIDB, kTV1FunctionAdjustWindowsLayerPriority, 2);                
+    ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustWindowsLayerPriority, 0);
+    ok = ok && tvOne.command(0, kTV1WindowIDB, kTV1FunctionAdjustWindowsLayerPriority, 1);                
         
     // Assign inputs to windows, so that left on the crossfader is left on the processor viewed from front
     ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustWindowsWindowSource, kTV1SourceRGB2);
@@ -886,7 +886,7 @@ int main()
                 tapLeftWasFirstPressed = 0;
             }
         }
-        else xFade = fadeCalc(xFadeAINCached, xFadeTolerance);
+        else xFade = 1.0 - fadeCalc(xFadeAINCached, xFadeTolerance);
 
         fadeUp = 1.0 - fadeCalc(fadeUpAINCached, fadeUpTolerance);
 
@@ -990,10 +990,10 @@ int main()
         }
         if (updateFade && debug) 
         {
-            debug->printf("\r\n"); 
             //debug->printf("xFade = %3f   fadeUp = %3f \r\n", xFadeAIN.read(), fadeUpAIN.read());
             debug->printf("xFade = %3f   fadeUp = %3f \r\n", xFadeAINCached, fadeUpAINCached);
             debug->printf("xFade = %3f   fadeUp = %3f   fadeA% = %i   fadeB% = %i \r\n", xFade, fadeUp, fadeAPercent, fadeBPercent);
+            debug->printf("\r\n"); 
         }
     }
 }

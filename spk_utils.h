@@ -61,15 +61,15 @@ private:
     bool wrap;
 };
 
-enum SPKMenuType { menuOfMenus, payload };
-
 class SPKMenu {
 public:
     SPKMenu() {
         selected.set(0, 0, 0, true);
     }
     
-    virtual SPKMenuType type(void) = 0;
+    enum menuType { menuOfMenus, payload };
+    
+    virtual menuType type(void) = 0;
     
     std::string title;
     
@@ -109,7 +109,7 @@ class SPKMenuOfMenus: public SPKMenu {
 public:
     SPKMenuOfMenus() : SPKMenu() {}
     
-    virtual SPKMenuType type() {
+    virtual menuType type() {
         return menuOfMenus;
     }
     
@@ -134,7 +134,7 @@ public:
         payload2.push_back(0);
     }
     
-    virtual SPKMenuType type() {
+    virtual menuType type() {
         return payload;
     }
     

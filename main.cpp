@@ -163,7 +163,7 @@ int mixMode = mixBlend;
 SPKMenuPayload commsMenu;
 enum { commsNone, commsOSC, commsArtNet, commsDMXIn, commsDMXOut};
 int commsMode = commsNone;
-enum { advancedHDCPOn, advancedHDCPOff, advancedConformProcessor, advancedLoadDefaults, advancedSelfTest };
+enum { advancedHDCPOn, advancedHDCPOff, advancedConformProcessor, advancedLoadDefaults, advancedSelfTest, advancedSetResolutions };
 
 // RJ45 Comms
 enum { rj45Ethernet = 0, rj45DMX = 1}; // These values from circuit
@@ -512,6 +512,7 @@ int main()
     advancedMenu.addMenuItem("Conform Processor", advancedConformProcessor, 0);
     if (settingsAreCustom) advancedMenu.addMenuItem("Revert to defaults", advancedLoadDefaults, 0);
     advancedMenu.addMenuItem("Start Self-Test", advancedSelfTest, 0);
+    advancedMenu.addMenuItem("Experimental - Res2Processor", advancedSetResolutions, 0);
 
     mainMenu.title = "Main Menu";
     mainMenu.addMenuItem(&mixModeMenu);
@@ -528,22 +529,17 @@ int main()
     fadeBPO.period(0.001);
     
     // Test for TV One connectivity and determine unit type
-    // Ah. My 750 reports zero for these types, both over RS232 and on OSD.
-    if (false)
-    {
-        int ack[SPKTVOne::standardAckLength];
-        
-        // kTV1FunctionReadSoftwareVersion
-        // kTV1FunctionReadProductType
-        // kTV1FunctionReadBoardType
-        
-        bool ok = tvOne.command(SPKTVOne::readCommand, ack, SPKTVOne::standardAckLength, 0, kTV1WindowIDA, kTV1FunctionReadSoftwareVersion, 0);
-        
-        printf("\r\nOK: %s\r\n", ok ? "true" : "false");
-        
-        for (int i =0; i<20; i++) printf("%c", ack[i]);
-        printf("\r\n");
-    }
+    int32_t testConnectionPayload = 0;
+    
+    // kTV1FunctionReadSoftwareVersion
+    // kTV1FunctionReadProductType
+    // kTV1FunctionReadBoardType
+    bool ok = tvOne.readCommand(0, kTV1WindowIDA, kTV1FunctionReadSoftwareVersion, testConnectionPayload);
+    
+    string tvOneDetectString = ok ? "TVOne link ok" : "TVOne link failed";
+    
+    // TODO: Use software version to select resolution slots etc?
+    // TODO: Use product / board type to select TVOne conform type?
     
     // Display menu and framing lines
     screen.horizLineToBuffer(kMenuLine1*pixInPage - 1);
@@ -556,6 +552,7 @@ int main()
     screen.clearBufferRow(kCommsStatusLine);
     screen.textToBuffer(commsMenu.selectedString(), kCommsStatusLine);
     screen.clearBufferRow(kTVOneStatusLine);
+    screen.textToBuffer(tvOneDetectString, kTVOneStatusLine);
     screen.sendBuffer();
 
 
@@ -617,9 +614,9 @@ int main()
         if (menuEnc.hasPressed()) 
         {
             if (debug) debug->printf("Action Menu Item!\r\n");
-        
+                    
             // Are we changing menus?
-            if (selectedMenu->type() == menuOfMenus) 
+            if (selectedMenu->type() == SPKMenu::menuOfMenus) 
             {
                 // point selected menu to the new menu
                 // FIXME. Make this function abstract virtual of base class or get dynamic_cast working. BTW: C++ sucks / Obj-c rocks / Right now.
@@ -643,7 +640,7 @@ int main()
                 }
             }
             // Are we cancelling?
-            else if (selectedMenu->type() == payload && selectedMenu->selectedIndex() == 0)           
+            else if (selectedMenu->type() == SPKMenu::payload && selectedMenu->selectedIndex() == 0)           
             {
                 selectedMenu = lastSelectedMenu;
                 
@@ -853,6 +850,14 @@ int main()
                 else if (advancedMenu.selectedPayload1() == advancedSelfTest)
                 {
                     selfTest();
+                }
+                else if (advancedMenu.selectedPayload1() == advancedSetResolutions)
+                {
+                    bool ok;
+                    ok = tvOne.setCustomResolutions();
+                    
+                    screen.clearBufferRow(kTVOneStatusLine);
+                    screen.textToBuffer(ok ? "Resolutions set" : "Res' could not be set", kTVOneStatusLine);
                 }
             }
             else

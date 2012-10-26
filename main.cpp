@@ -152,14 +152,14 @@ SPKSettings settings;
 
 // Menu 
 SPKMenu *selectedMenu;
-SPKMenu *lastSelectedMenu;
 SPKMenu mainMenu;
 SPKMenu resolutionMenu;
 
-SPKMenu mixModeMenu; 
+SPKMenu mixModeMenu;
+SPKMenu mixModeAdditiveMenu; 
 enum { mixBlend, mixAdditive, mixKey }; // additive will require custom TVOne firmware.
 int mixMode = mixBlend;
-float fadeCurve = 0; // 0 = "X", 1 = "/\"  <-- pictograms!
+float fadeCurve = 1.0f; // 0 = "X", ie. as per blend, 1 = "/\"  <-- pictograms!
 
 SPKMenu commsMenu;
 enum { commsNone, commsOSC, commsArtNet, commsDMXIn, commsDMXOut};
@@ -308,6 +308,47 @@ bool setKeyParamsTo(int index)
     
     return ok;
 }
+
+void actionMixMode()
+{
+    bool ok = true;
+    std::string sentOK;
+    std::stringstream sentMSG;
+
+    // Set Keyer
+    if (mixMode < mixKey)
+    {
+        if (mixMode == mixBlend)
+        {
+            // Waiting on TV One...
+        }
+        else if (mixMode == mixAdditive)
+        {
+            // Waiting on TV One...
+        }
+        
+        ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerEnable, false);
+        sentMSG << "Keyer Off";                
+    }
+    else
+    {
+        ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerEnable, true);
+        sentMSG << "Keyer On";
+        
+        int index = mixMode - mixKey;
+        ok = ok && setKeyParamsTo(index);
+        sentMSG << " with " << index;
+    }
+
+    if (ok) sentOK = "Sent:";
+    else sentOK = "Send Error:";
+    
+    screen.clearBufferRow(kTVOneStatusLine);
+    screen.textToBuffer(sentOK + sentMSG.str(), kTVOneStatusLine);
+    
+    if (debug) { debug->printf("Changing mix mode"); }
+}
+
 
 bool conformProcessor()
 {
@@ -491,20 +532,22 @@ int main()
     // Set menu structure
     mixModeMenu.title = "Mix Mode";
     mixModeMenu.addMenuItem(SPKMenuItem("Blend", mixBlend));
-    if (true) mixModeMenu.addMenuItem(SPKMenuItem("Additive", mixAdditive)); // TODO: Detect whether SPKDF custom firmware
-    // TODO: Set fadecurve parameter menuitem
+    if (true) mixModeMenu.addMenuItem(SPKMenuItem("Additive", &mixModeAdditiveMenu)); // TODO: Detect whether SPKDF custom firmware
     for (int i=0; i < settings.keyerSetCount(); i++)
     {
         mixModeMenu.addMenuItem(SPKMenuItem(settings.keyerParamName(i), mixKey+i));
     }
-    mixModeMenu.addMenuItem(SPKMenuItem("< Main Menu", &mainMenu));
+    mixModeMenu.addMenuItem(SPKMenuItem("Back to Main Menu", &mainMenu));
+    
+    mixModeAdditiveMenu.title = "Additive - adjust midpoint";
+    mixModeAdditiveMenu.addMenuItem(SPKMenuItem("click to return", &mixModeMenu, true));
  
     resolutionMenu.title = "Resolution";
     for (int i=0; i < settings.resolutionsCount(); i++)
     {
         resolutionMenu.addMenuItem(SPKMenuItem(settings.resolutionName(i), settings.resolutionIndex(i), settings.resolutionEDIDIndex(i)));
     }
-    resolutionMenu.addMenuItem(SPKMenuItem("< Main Menu", &mainMenu));
+    resolutionMenu.addMenuItem(SPKMenuItem("Back to Main Menu", &mainMenu));
 
     commsMenu.title = "Network Mode"; 
     // commsMenu is built in mixer's run loop, depending on RJ45 mode.
@@ -515,13 +558,13 @@ int main()
     advancedMenu.addMenuItem(SPKMenuItem("Conform Processor", advancedConformProcessor));
     if (settingsAreCustom) advancedMenu.addMenuItem(SPKMenuItem("Revert to defaults", advancedLoadDefaults));
     advancedMenu.addMenuItem(SPKMenuItem("Start Self-Test", advancedSelfTest));
-    advancedMenu.addMenuItem(SPKMenuItem("< Main Menu", &mainMenu));
+    advancedMenu.addMenuItem(SPKMenuItem("Back to Main Menu", &mainMenu));
     
     mainMenu.title = "Main Menu";
-    mainMenu.addMenuItem(SPKMenuItem("> " + mixModeMenu.title, &mixModeMenu));
-    mainMenu.addMenuItem(SPKMenuItem("> " + resolutionMenu.title, &resolutionMenu));
-    mainMenu.addMenuItem(SPKMenuItem("> " + commsMenu.title, &commsMenu));
-    mainMenu.addMenuItem(SPKMenuItem("> " + advancedMenu.title, &advancedMenu));
+    mainMenu.addMenuItem(SPKMenuItem(mixModeMenu.title, &mixModeMenu));
+    mainMenu.addMenuItem(SPKMenuItem(resolutionMenu.title, &resolutionMenu));
+    mainMenu.addMenuItem(SPKMenuItem(commsMenu.title, &commsMenu));
+    mainMenu.addMenuItem(SPKMenuItem(advancedMenu.title, &advancedMenu));
       
     selectedMenu = &mainMenu;
       
@@ -555,8 +598,6 @@ int main()
     screen.textToBuffer(tvOneDetectString, kTVOneStatusLine);
     screen.sendBuffer();
 
-debug->printf("this far?");
-
     //// CONTROLS TEST
 
     while (0) {
@@ -588,7 +629,7 @@ debug->printf("this far?");
                 commsMenu.addMenuItem(SPKMenuItem("None", commsNone));
                 commsMenu.addMenuItem(SPKMenuItem("OSC", commsOSC));
                 commsMenu.addMenuItem(SPKMenuItem("ArtNet", commsArtNet));
-                commsMenu.addMenuItem(SPKMenuItem("< Main Menu", &mainMenu));
+                commsMenu.addMenuItem(SPKMenuItem("Back to Main Menu", &mainMenu));
             }
             if (rj45Mode == rj45DMX) 
             {
@@ -597,7 +638,7 @@ debug->printf("this far?");
                 commsMenu.addMenuItem(SPKMenuItem("None", commsNone));
                 commsMenu.addMenuItem(SPKMenuItem("DMX In", commsDMXIn));
                 commsMenu.addMenuItem(SPKMenuItem("DMX Out", commsDMXOut));
-                commsMenu.addMenuItem(SPKMenuItem("< Main Menu", &mainMenu));
+                commsMenu.addMenuItem(SPKMenuItem("Back to Main Menu", &mainMenu));
             }
             
             // cancel old comms
@@ -621,15 +662,36 @@ debug->printf("this far?");
         // Update GUI
         if (menuChange != 0)
         {
-            if (debug) debug->printf("Menu changed by %i\r\n", menuChange);
-            
-            *selectedMenu = selectedMenu->selectedIndex() + menuChange;
-            
-            // update OLED line 2 here
-            screen.clearBufferRow(kMenuLine2);
-            screen.textToBuffer(selectedMenu->selectedString(), kMenuLine2);
-            
-            if (debug) debug->printf("%s \r\n", selectedMenu->selectedString().c_str());
+            if (selectedMenu->selectedItem().handlingControls)
+            {
+                if (selectedMenu == &mixModeAdditiveMenu)
+                {
+                    fadeCurve += menuChange * 0.05;
+                    if (fadeCurve > 1.0f) fadeCurve = 1.0f;
+                    if (fadeCurve < 0.0f) fadeCurve = 0.0f;
+                    
+                    /* Mystery Crash
+                    std::stringstream fadeCurveMessage;
+                    fadeCurveMessage << "Blend < " << fadeCurve << " > Additive";
+                    screen.clearBufferRow(kMenuLine2);
+                    screen.textToBuffer(fadeCurveMessage.str(), kMenuLine2);
+                    */
+                    
+                    if (debug) debug->printf("Fade curve changed by %i to %f", menuChange, fadeCurve);
+                }
+            }
+            else
+            {
+                if (debug) debug->printf("Menu changed by %i\r\n", menuChange);
+                
+                *selectedMenu = selectedMenu->selectedIndex() + menuChange;
+                
+                // update OLED line 2 here
+                screen.clearBufferRow(kMenuLine2);
+                screen.textToBuffer(selectedMenu->selectedString(), kMenuLine2);
+                
+                if (debug) debug->printf("%s \r\n", selectedMenu->selectedString().c_str());
+            }    
         }
         
         // Action menu item
@@ -643,9 +705,6 @@ debug->printf("this far?");
                 // point selected menu to the new menu
                 selectedMenu = selectedMenu->selectedItem().payload.menu;
                 
-                // reset the selection within that menu to the first position
-                (*selectedMenu) = 0;
-                
                 // update OLED lines 1&2
                 screen.clearBufferRow(kMenuLine1);
                 screen.clearBufferRow(kMenuLine2);
@@ -658,39 +717,19 @@ debug->printf("this far?");
                     debug->printf("%s \r\n", selectedMenu->title.c_str());
                     debug->printf("%s \r\n", selectedMenu->selectedString().c_str());
                 }
+                
+                // Are we changing menus that should have a command attached?
+                if (selectedMenu == &mixModeAdditiveMenu)
+                {
+                    mixMode = mixAdditive;
+                    actionMixMode();
+                }
             }
             // With that out of the way, we should be actioning a specific menu's payload?
             else if (selectedMenu == &mixModeMenu)
             {
                 mixMode = mixModeMenu.selectedItem().payload.command[0];
-            
-                bool ok = true;
-                std::string sentOK;
-                std::stringstream sentMSG;
-            
-                // Set Keyer
-                if (mixMode < mixKey)
-                {
-                    ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerEnable, false);
-                    sentMSG << "Keyer Off";                
-                }
-                else
-                {
-                    ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerEnable, true);
-                    sentMSG << "Keyer On";
-                    
-                    int index = mixMode - mixKey;
-                    ok = ok && setKeyParamsTo(index);
-                    sentMSG << " with " << index;
-                }
-
-                if (ok) sentOK = "Sent:";
-                else sentOK = "Send Error:";
-                
-                screen.clearBufferRow(kTVOneStatusLine);
-                screen.textToBuffer(sentOK + sentMSG.str(), kTVOneStatusLine);
-                
-                if (debug) { debug->printf("Changing mix mode"); }
+                actionMixMode();
             }
             else if (selectedMenu == &resolutionMenu)
             {

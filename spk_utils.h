@@ -65,19 +65,20 @@ class SPKMenu;
 
 class SPKMenuItem {
 public:
-    enum itemType { changesToMenu, sendsCommand, usesMenuControls };
+    enum itemType { changesToMenu, sendsCommand };
     itemType type;
     string text;
+    bool handlingControls;
     union {
         SPKMenu* menu;
         int32_t command[2];
-        bool handlingControls;
     } payload;
     
-    SPKMenuItem(string title, SPKMenu* menu)
+    SPKMenuItem(string title, SPKMenu* menu, bool handlesControls = false)
     {
         text = title;
         type = changesToMenu;
+        handlingControls = handlesControls;
         payload.menu = menu;
     }
     
@@ -85,6 +86,7 @@ public:
     {
         text = title;
         type = sendsCommand;
+        handlingControls = false;
         payload.command[0] = command;
         payload.command[1] = 0;
     }
@@ -93,15 +95,9 @@ public:
     {
         text = title;
         type = sendsCommand;
+        handlingControls = false;
         payload.command[0] = command1;
         payload.command[1] = command2;
-    }
-    
-    SPKMenuItem(string title)
-    {
-        text = title;
-        type = usesMenuControls;
-        payload.handlingControls = true;
     }
 };
 
@@ -141,11 +137,13 @@ public:
         return selected.index();
     }
     
-    std::string  selectedString() {        
+    std::string  selectedString() {
+    if (items.size() == 0) printf("SPKMenu no items");        
         return items[selected.index()].text;
     }
     
     SPKMenuItem selectedItem() {
+    if (items.size() == 0) printf("SPKMenu no items");
         return items[selected.index()];
     }
         

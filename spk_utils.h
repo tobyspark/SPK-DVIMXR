@@ -61,19 +61,59 @@ private:
     bool wrap;
 };
 
+class SPKMenu;
+
+class SPKMenuItem {
+public:
+    enum itemType { changesToMenu, sendsCommand, usesMenuControls };
+    itemType type;
+    string text;
+    union {
+        SPKMenu* menu;
+        int32_t command[2];
+        bool handlingControls;
+    } payload;
+    
+    SPKMenuItem(string title, SPKMenu* menu)
+    {
+        text = title;
+        type = changesToMenu;
+        payload.menu = menu;
+    }
+    
+    SPKMenuItem(string title, int32_t command)
+    {
+        text = title;
+        type = sendsCommand;
+        payload.command[0] = command;
+        payload.command[1] = 0;
+    }
+    
+    SPKMenuItem(string title, int32_t command1, int32_t command2)
+    {
+        text = title;
+        type = sendsCommand;
+        payload.command[0] = command1;
+        payload.command[1] = command2;
+    }
+    
+    SPKMenuItem(string title)
+    {
+        text = title;
+        type = usesMenuControls;
+        payload.handlingControls = true;
+    }
+};
+
+
 class SPKMenu {
 public:
     SPKMenu() {
         selected.set(0, 0, 0, true);
     }
     
-    enum menuType { menuOfMenus, payload };
-    
-    virtual menuType type(void) = 0;
-    
     std::string title;
     
-    // not carried into subclass... whats the c++ way of doing this?
     SPKMenu& operator = (const int &newIndex) {
         selected = newIndex;
         return *this;
@@ -87,81 +127,33 @@ public:
         selected--;
     }
     
-    void addMenuItem (std::string menuText) {
-        text.push_back(menuText);
-        selected.setMax(text.size()-1);
+    void addMenuItem (SPKMenuItem menuItem) {
+        items.push_back(menuItem);
+        selected.setMax(items.size()-1);
+    }
+    
+    void clearMenuItems() {
+        items.clear();
+        selected.setMax(0);
     }
     
     int selectedIndex() {
         return selected.index();
     }
     
-    std::string  selectedString() {
-        return text[selected.index()];
+    std::string  selectedString() {        
+        return items[selected.index()].text;
+    }
+    
+    SPKMenuItem selectedItem() {
+        return items[selected.index()];
     }
         
 protected:
     SPKIndexInRange selected;
-    std::vector<std::string> text;
+    std::vector<SPKMenuItem> items;
 };
 
-class SPKMenuOfMenus: public SPKMenu {
-public:
-    SPKMenuOfMenus() : SPKMenu() {}
-    
-    virtual menuType type() {
-        return menuOfMenus;
-    }
-    
-    void addMenuItem(SPKMenu* menu) {
-        SPKMenu::addMenuItem(menu->title);
-        payload.push_back(menu);
-    }
-    
-    SPKMenu* selectedMenu() {
-        return payload[selected.index()];
-    }
-        
-private:
-    vector<SPKMenu*> payload;
-};
-
-class SPKMenuPayload: public SPKMenu {
-public:
-    SPKMenuPayload() : SPKMenu() {
-        text.push_back("Cancel");
-        payload1.push_back(0);
-        payload2.push_back(0);
-    }
-    
-    virtual menuType type() {
-        return payload;
-    }
-    
-    void addMenuItem(std::string menuText, int32_t menuPayload1, int32_t menuPayload2) {
-        SPKMenu::addMenuItem(menuText);
-        payload1.push_back(menuPayload1);
-        payload2.push_back(menuPayload2);
-    }
-    
-    int32_t selectedPayload1() {
-        return payload1[selected.index()];
-    }
-    
-    int32_t selectedPayload2() {
-        return payload2[selected.index()];
-    }
-    
-    SPKMenuPayload& operator = (const int &newIndex) {
-        selected = newIndex;
-        return *this;
-    }
-    
-               
-private:
-    vector<int32_t> payload1;
-    vector<int32_t> payload2;
-};
 
 class SPKSign {
 public:

@@ -114,8 +114,8 @@
 //// DEBUG
 
 // Comment out one or the other...
-//Serial *debug = new Serial(USBTX, USBRX); // For debugging via USB serial
-Serial *debug = NULL; // For release (no debugging)
+Serial *debug = new Serial(USBTX, USBRX); // For debugging via USB serial
+//Serial *debug = NULL; // For release (no debugging)
 
 //// SOFT RESET
 
@@ -153,19 +153,19 @@ SPKSettings settings;
 // Menu 
 SPKMenu *selectedMenu;
 SPKMenu *lastSelectedMenu;
-SPKMenuOfMenus mainMenu;
-SPKMenuPayload resolutionMenu;
+SPKMenu mainMenu;
+SPKMenu resolutionMenu;
 
-SPKMenuPayload mixModeMenu; 
+SPKMenu mixModeMenu; 
 enum { mixBlend, mixAdditive, mixKey }; // additive will require custom TVOne firmware.
 int mixMode = mixBlend;
 float fadeCurve = 0; // 0 = "X", 1 = "/\"  <-- pictograms!
 
-SPKMenuPayload commsMenu;
+SPKMenu commsMenu;
 enum { commsNone, commsOSC, commsArtNet, commsDMXIn, commsDMXOut};
 int commsMode = commsNone;
 
-SPKMenuPayload advancedMenu;
+SPKMenu advancedMenu;
 enum { advancedHDCPOn, advancedHDCPOff, advancedConformProcessor, advancedLoadDefaults, advancedSelfTest, advancedSetResolutions };
 
 // RJ45 Comms
@@ -490,44 +490,41 @@ int main()
 */    
     // Set menu structure
     mixModeMenu.title = "Mix Mode";
-    mixModeMenu.addMenuItem("Blend", mixBlend, 0);
-    if (true) mixModeMenu.addMenuItem("Additive", mixAdditive, 0); // TODO: Detect whether SPKDF custom firmware
+    mixModeMenu.addMenuItem(SPKMenuItem("Blend", mixBlend));
+    if (true) mixModeMenu.addMenuItem(SPKMenuItem("Additive", mixAdditive)); // TODO: Detect whether SPKDF custom firmware
     // TODO: Set fadecurve parameter menuitem
     for (int i=0; i < settings.keyerSetCount(); i++)
     {
-        mixModeMenu.addMenuItem(settings.keyerParamName(i), mixKey+i, 0);
+        mixModeMenu.addMenuItem(SPKMenuItem(settings.keyerParamName(i), mixKey+i));
     }
+    mixModeMenu.addMenuItem(SPKMenuItem("< Main Menu", &mainMenu));
  
     resolutionMenu.title = "Resolution";
     for (int i=0; i < settings.resolutionsCount(); i++)
     {
-        resolutionMenu.addMenuItem(settings.resolutionName(i), settings.resolutionIndex(i), settings.resolutionEDIDIndex(i));
+        resolutionMenu.addMenuItem(SPKMenuItem(settings.resolutionName(i), settings.resolutionIndex(i), settings.resolutionEDIDIndex(i)));
     }
+    resolutionMenu.addMenuItem(SPKMenuItem("< Main Menu", &mainMenu));
 
     commsMenu.title = "Network Mode"; 
-    commsMenu.addMenuItem("None", commsNone, 0);
-    commsMenu.addMenuItem("OSC", commsOSC, 0);
-    commsMenu.addMenuItem("ArtNet", commsArtNet, 0);
-    commsMenu.addMenuItem("DMX In", commsDMXIn, 0);
-    commsMenu.addMenuItem("DMX Out", commsDMXOut, 0);
-
+    // commsMenu is built in mixer's run loop, depending on RJ45 mode.
+    
     advancedMenu.title = "Troubleshooting"; 
-    advancedMenu.addMenuItem("HDCP Off", advancedHDCPOff, 0);
-    advancedMenu.addMenuItem("HDCP On", advancedHDCPOn, 0);
-    advancedMenu.addMenuItem("Conform Processor", advancedConformProcessor, 0);
-    if (settingsAreCustom) advancedMenu.addMenuItem("Revert to defaults", advancedLoadDefaults, 0);
-    advancedMenu.addMenuItem("Start Self-Test", advancedSelfTest, 0);
-    advancedMenu.addMenuItem("Experimental - Res2Processor", advancedSetResolutions, 0);
-
+    advancedMenu.addMenuItem(SPKMenuItem("HDCP Off", advancedHDCPOff));
+    advancedMenu.addMenuItem(SPKMenuItem("HDCP On", advancedHDCPOn));
+    advancedMenu.addMenuItem(SPKMenuItem("Conform Processor", advancedConformProcessor));
+    if (settingsAreCustom) advancedMenu.addMenuItem(SPKMenuItem("Revert to defaults", advancedLoadDefaults));
+    advancedMenu.addMenuItem(SPKMenuItem("Start Self-Test", advancedSelfTest));
+    advancedMenu.addMenuItem(SPKMenuItem("< Main Menu", &mainMenu));
+    
     mainMenu.title = "Main Menu";
-    mainMenu.addMenuItem(&mixModeMenu);
-    mainMenu.addMenuItem(&resolutionMenu);
-    mainMenu.addMenuItem(&commsMenu);
-    mainMenu.addMenuItem(&advancedMenu);
-    
+    mainMenu.addMenuItem(SPKMenuItem("> " + mixModeMenu.title, &mixModeMenu));
+    mainMenu.addMenuItem(SPKMenuItem("> " + resolutionMenu.title, &resolutionMenu));
+    mainMenu.addMenuItem(SPKMenuItem("> " + commsMenu.title, &commsMenu));
+    mainMenu.addMenuItem(SPKMenuItem("> " + advancedMenu.title, &advancedMenu));
+      
     selectedMenu = &mainMenu;
-    lastSelectedMenu = &mainMenu;    
-    
+      
     // Misc I/O stuff
     
     fadeAPO.period(0.001);
@@ -545,7 +542,7 @@ int main()
     
     // TODO: Use software version to select resolution slots etc?
     // TODO: Use product / board type to select TVOne conform type?
-    
+ 
     // Display menu and framing lines
     screen.horizLineToBuffer(kMenuLine1*pixInPage - 1);
     screen.clearBufferRow(kMenuLine1);
@@ -554,12 +551,11 @@ int main()
     screen.textToBuffer(selectedMenu->selectedString(), kMenuLine2);
     screen.horizLineToBuffer(kMenuLine2*pixInPage + pixInPage);
     screen.horizLineToBuffer(kCommsStatusLine*pixInPage - 1);
-    screen.clearBufferRow(kCommsStatusLine);
-    screen.textToBuffer(commsMenu.selectedString(), kCommsStatusLine);
     screen.clearBufferRow(kTVOneStatusLine);
     screen.textToBuffer(tvOneDetectString, kTVOneStatusLine);
     screen.sendBuffer();
 
+debug->printf("this far?");
 
     //// CONTROLS TEST
 
@@ -582,17 +578,38 @@ int main()
         
         if (rj45ModeDIN != rj45Mode)
         {
+            if (debug) debug->printf("Handling RJ45 mode change\r\n");   
             // update state
             rj45Mode = rj45ModeDIN;
-            if (rj45Mode == rj45Ethernet) commsMenu.title = "Network Mode [Ethernet]";
-            if (rj45Mode == rj45DMX) commsMenu.title = "Network Mode [DMX]";
+            if (rj45Mode == rj45Ethernet) 
+            {
+                commsMenu.title = "Network Mode [Ethernet]";
+                commsMenu.clearMenuItems();
+                commsMenu.addMenuItem(SPKMenuItem("None", commsNone));
+                commsMenu.addMenuItem(SPKMenuItem("OSC", commsOSC));
+                commsMenu.addMenuItem(SPKMenuItem("ArtNet", commsArtNet));
+                commsMenu.addMenuItem(SPKMenuItem("< Main Menu", &mainMenu));
+            }
+            if (rj45Mode == rj45DMX) 
+            {
+                commsMenu.title = "Network Mode [DMX]";
+                commsMenu.clearMenuItems();
+                commsMenu.addMenuItem(SPKMenuItem("None", commsNone));
+                commsMenu.addMenuItem(SPKMenuItem("DMX In", commsDMXIn));
+                commsMenu.addMenuItem(SPKMenuItem("DMX Out", commsDMXOut));
+                commsMenu.addMenuItem(SPKMenuItem("< Main Menu", &mainMenu));
+            }
             
             // cancel old comms
             commsMode = commsNone;
             commsMenu = commsMode;
             
             // refresh display
-            if (selectedMenu == &commsMenu) screen.textToBuffer(selectedMenu->title, kMenuLine1);
+            if (selectedMenu == &commsMenu) 
+            {
+                screen.textToBuffer(selectedMenu->title, kMenuLine1);
+                screen.textToBuffer(selectedMenu->selectedString(), kMenuLine2);
+            }
             if (rj45Mode == rj45Ethernet) screen.textToBuffer("RJ45: Ethernet Engaged", kCommsStatusLine);
             if (rj45Mode == rj45DMX) screen.textToBuffer("RJ45: DMX Engaged", kCommsStatusLine);
         }
@@ -621,12 +638,10 @@ int main()
             if (debug) debug->printf("Action Menu Item!\r\n");
                     
             // Are we changing menus?
-            if (selectedMenu->type() == SPKMenu::menuOfMenus) 
+            if (selectedMenu->selectedItem().type == SPKMenuItem::changesToMenu) 
             {
                 // point selected menu to the new menu
-                // FIXME. Make this function abstract virtual of base class or get dynamic_cast working. BTW: C++ sucks / Obj-c rocks / Right now.
-                if (selectedMenu == &mainMenu) selectedMenu = mainMenu.selectedMenu();
-                else if (debug) debug->printf("FIXME: You've missed a SPKMenuOfMenus");
+                selectedMenu = selectedMenu->selectedItem().payload.menu;
                 
                 // reset the selection within that menu to the first position
                 (*selectedMenu) = 0;
@@ -644,35 +659,17 @@ int main()
                     debug->printf("%s \r\n", selectedMenu->selectedString().c_str());
                 }
             }
-            // Are we cancelling?
-            else if (selectedMenu->type() == SPKMenu::payload && selectedMenu->selectedIndex() == 0)           
-            {
-                selectedMenu = lastSelectedMenu;
-                
-                // update OLED lines 1&2
-                screen.clearBufferRow(kMenuLine1);
-                screen.clearBufferRow(kMenuLine2);
-                screen.textToBuffer(selectedMenu->title, kMenuLine1);
-                screen.textToBuffer(selectedMenu->selectedString(), kMenuLine2);
-                
-                if (debug)
-                {
-                    debug->printf("\r\n");
-                    debug->printf("%s \r\n", selectedMenu->title.c_str());
-                    debug->printf("%s \r\n", selectedMenu->selectedString().c_str());
-                }
-            }
             // With that out of the way, we should be actioning a specific menu's payload?
             else if (selectedMenu == &mixModeMenu)
             {
-                mixMode = mixModeMenu.selectedPayload1();
+                mixMode = mixModeMenu.selectedItem().payload.command[0];
             
                 bool ok = true;
                 std::string sentOK;
                 std::stringstream sentMSG;
             
                 // Set Keyer
-                if (mixModeMenu.selectedPayload1() < mixKey)
+                if (mixMode < mixKey)
                 {
                     ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerEnable, false);
                     sentMSG << "Keyer Off";                
@@ -682,7 +679,7 @@ int main()
                     ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerEnable, true);
                     sentMSG << "Keyer On";
                     
-                    int index = mixModeMenu.selectedPayload1() - mixKey;
+                    int index = mixMode - mixKey;
                     ok = ok && setKeyParamsTo(index);
                     sentMSG << " with " << index;
                 }
@@ -699,16 +696,16 @@ int main()
             {
                 bool ok = true;
                 
-                ok =       tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustOutputsOutputResolution, resolutionMenu.selectedPayload1());
-                ok = ok && tvOne.command(kTV1SourceRGB1, kTV1WindowIDA, kTV1FunctionAdjustSourceEDID, resolutionMenu.selectedPayload2());
-                ok = ok && tvOne.command(kTV1SourceRGB2, kTV1WindowIDA, kTV1FunctionAdjustSourceEDID, resolutionMenu.selectedPayload2());
+                ok =       tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustOutputsOutputResolution, resolutionMenu.selectedItem().payload.command[0]);
+                ok = ok && tvOne.command(kTV1SourceRGB1, kTV1WindowIDA, kTV1FunctionAdjustSourceEDID, resolutionMenu.selectedItem().payload.command[1]);
+                ok = ok && tvOne.command(kTV1SourceRGB2, kTV1WindowIDA, kTV1FunctionAdjustSourceEDID, resolutionMenu.selectedItem().payload.command[1]);
                 
                 std::string sentOK;
                 if (ok) sentOK = "Sent: ";
                 else sentOK = "Send Error: ";
                 
                 std::stringstream sentMSG;
-                sentMSG << "Res " << resolutionMenu.selectedPayload1() << ", EDID " << resolutionMenu.selectedPayload2();
+                sentMSG << "Res " << resolutionMenu.selectedItem().payload.command[0] << ", EDID " << resolutionMenu.selectedItem().payload.command[1];
                 
                 screen.clearBufferRow(kTVOneStatusLine);
                 screen.textToBuffer(sentOK + sentMSG.str(), kTVOneStatusLine);
@@ -729,16 +726,16 @@ int main()
                 if (dmx)        {delete dmx; dmx = NULL;}
                 
                 // Ensure we can't change to comms modes the hardware isn't switched to
-                if (rj45Mode == rj45DMX && (commsMenu.selectedPayload1() == commsOSC || commsMenu.selectedPayload1() == commsArtNet))
+                if (rj45Mode == rj45DMX && (commsMenu.selectedItem().payload.command[0] == commsOSC || commsMenu.selectedItem().payload.command[0] == commsArtNet))
                 {
                     commsTypeString = "RJ45 not in Ethernet mode";
                 }
-                else if (rj45Mode == rj45Ethernet && (commsMenu.selectedPayload1() == commsDMXIn || commsMenu.selectedPayload1() == commsDMXOut))
+                else if (rj45Mode == rj45Ethernet && (commsMenu.selectedItem().payload.command[0] == commsDMXIn || commsMenu.selectedItem().payload.command[0] == commsDMXOut))
                 {
                     commsTypeString = "RJ45 not in DMX mode";
                 }
                 // Action!
-                else if (commsMenu.selectedPayload1() == commsOSC) 
+                else if (commsMenu.selectedItem().payload.command[0] == commsOSC) 
                 {
                     commsMode = commsOSC;
                     commsTypeString = "OSC: ";                    
@@ -765,7 +762,7 @@ int main()
                     
                     commsStatus << "Listening on " << kOSCMbedPort;
                 }
-                else if (commsMenu.selectedPayload1() == commsArtNet) 
+                else if (commsMenu.selectedItem().payload.command[0] == commsArtNet) 
                 {
                     commsMode = commsArtNet;
                     commsTypeString = "ArtNet: ";                    
@@ -786,7 +783,7 @@ int main()
                     
                     commsStatus << "Listening";
                 }
-                else if (commsMenu.selectedPayload1() == commsDMXIn) 
+                else if (commsMenu.selectedItem().payload.command[0] == commsDMXIn) 
                 {
                     commsMode = commsDMXIn;
                     commsTypeString = "DMX In: ";
@@ -795,7 +792,7 @@ int main()
                     
                     dmx = new DMX(kMBED_RS485_TTLTX, kMBED_RS485_TTLRX);
                 }
-                else if (commsMenu.selectedPayload1() == commsDMXOut) 
+                else if (commsMenu.selectedItem().payload.command[0] == commsDMXOut) 
                 {
                     commsMode = commsDMXOut;
                     commsTypeString = "DMX Out: ";
@@ -810,7 +807,7 @@ int main()
             }
             else if (selectedMenu == &advancedMenu)
             {
-                if (advancedMenu.selectedPayload1() == advancedHDCPOff)
+                if (advancedMenu.selectedItem().payload.command[0] == advancedHDCPOff)
                 {
                     bool ok = false;
                     
@@ -821,7 +818,7 @@ int main()
                     screen.clearBufferRow(kTVOneStatusLine);
                     screen.textToBuffer(sendOK, kTVOneStatusLine);
                 }
-                else if (advancedMenu.selectedPayload1() == advancedHDCPOn)
+                else if (advancedMenu.selectedItem().payload.command[0] == advancedHDCPOn)
                 {
                     bool ok = false;
                     
@@ -832,7 +829,7 @@ int main()
                     screen.clearBufferRow(kTVOneStatusLine);
                     screen.textToBuffer(sendOK, kTVOneStatusLine);
                 }
-                else if (advancedMenu.selectedPayload1() == advancedConformProcessor)
+                else if (advancedMenu.selectedItem().payload.command[0] == advancedConformProcessor)
                 {
                     screen.clearBufferRow(kTVOneStatusLine);
                     screen.textToBuffer("Conforming...", kTVOneStatusLine);
@@ -845,18 +842,18 @@ int main()
                     screen.clearBufferRow(kTVOneStatusLine);
                     screen.textToBuffer(sendOK, kTVOneStatusLine);
                 }
-                else if (advancedMenu.selectedPayload1() == advancedLoadDefaults)
+                else if (advancedMenu.selectedItem().payload.command[0] == advancedLoadDefaults)
                 {
                     settings.loadDefaults();
                     
                     screen.clearBufferRow(kTVOneStatusLine);
                     screen.textToBuffer("Controller reverted", kTVOneStatusLine);
                 }
-                else if (advancedMenu.selectedPayload1() == advancedSelfTest)
+                else if (advancedMenu.selectedItem().payload.command[0] == advancedSelfTest)
                 {
                     selfTest();
                 }
-                else if (advancedMenu.selectedPayload1() == advancedSetResolutions)
+                else if (advancedMenu.selectedItem().payload.command[0] == advancedSetResolutions)
                 {
                     bool ok;
                     ok = tvOne.setCustomResolutions();

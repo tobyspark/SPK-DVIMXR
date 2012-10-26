@@ -155,14 +155,17 @@ SPKMenu *selectedMenu;
 SPKMenu *lastSelectedMenu;
 SPKMenuOfMenus mainMenu;
 SPKMenuPayload resolutionMenu;
-SPKMenuPayload mixModeMenu;
-SPKMenuPayload advancedMenu;
 
+SPKMenuPayload mixModeMenu; 
 enum { mixBlend, mixAdditive, mixKey }; // additive will require custom TVOne firmware.
 int mixMode = mixBlend;
+float fadeCurve = 0; // 0 = "X", 1 = "/\"  <-- pictograms!
+
 SPKMenuPayload commsMenu;
 enum { commsNone, commsOSC, commsArtNet, commsDMXIn, commsDMXOut};
 int commsMode = commsNone;
+
+SPKMenuPayload advancedMenu;
 enum { advancedHDCPOn, advancedHDCPOff, advancedConformProcessor, advancedLoadDefaults, advancedSelfTest, advancedSetResolutions };
 
 // RJ45 Comms
@@ -488,6 +491,8 @@ int main()
     // Set menu structure
     mixModeMenu.title = "Mix Mode";
     mixModeMenu.addMenuItem("Blend", mixBlend, 0);
+    if (true) mixModeMenu.addMenuItem("Additive", mixAdditive, 0); // TODO: Detect whether SPKDF custom firmware
+    // TODO: Set fadecurve parameter menuitem
     for (int i=0; i < settings.keyerSetCount(); i++)
     {
         mixModeMenu.addMenuItem(settings.keyerParamName(i), mixKey+i, 0);
@@ -950,7 +955,7 @@ int main()
 
         if (mixMode == mixBlend) 
         {
-            if (fadeUp < 1.0)
+            if (fadeUp < 1.0) // TODO: OR if a source is not valid
             {
                 // we need to set fade level of both windows as there is no way AFAIK to implement fade to black as a further window on top of A&B
                 newFadeAPercent = (1.0-xFade) * fadeUp * 100.0;
@@ -965,9 +970,14 @@ int main()
         }
         else if (mixMode == mixAdditive)
         {
-            // we need to set fade level of both windows according to the fade curve profile (yet to implement - to do when tvone supply additive capability)
-            newFadeAPercent = (1.0-xFade) * fadeUp * 100.0;
-            newFadeBPercent = xFade * fadeUp * 100.0;
+            // we need to set fade level of both windows according to the fade curve profile
+            float newFadeA = (1.0-xFade) * (1.0 + fadeCurve);
+            float newFadeB = xFade * (1 + fadeCurve);
+            if (newFadeA > 1.0) newFadeA = 1.0;
+            if (newFadeB > 1.0) newFadeB = 1.0;
+            
+            newFadeAPercent = newFadeA * fadeUp * 100.0;
+            newFadeBPercent = newFadeB * fadeUp * 100.0;
         }
         else if (mixMode >= mixKey)
         {

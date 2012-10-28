@@ -57,8 +57,6 @@
 #include "DMX.h"
 #include "filter.h"
 
-#include <sstream>
-
 #define kSPKDFSoftwareVersion "beta.19"
 
 // MBED PINS
@@ -194,40 +192,50 @@ bool tapLeftWasFirstPressed = false;
 int keyerParamsSet = -1; // last keyParams index uploaded to unit 
 
 void processOSC(float &xFade, float &fadeUp) {
-    std::stringstream statusMessage;
-    statusMessage.setf(ios::fixed,ios::floatfield);
-    statusMessage.precision(2);
+    string statusMessage;
     
     if (!strcmp( recMessage.getTopAddress() , "dvimxr" )) 
     {
-        statusMessage << "OSC: /dvimxr";
+        statusMessage = "OSC: /dvimxr";
         if (!strcmp( recMessage.getSubAddress() , "xFade" )) 
+        {
             if (recMessage.getArgNum() == 1)
                 if (recMessage.getTypeTag(0) == 'f')
                 {
-                    double newXFade = recMessage.getArgFloat(0);
-                    statusMessage << "/xFade " << newXFade;
-                    xFade = newXFade;
+                    xFade = recMessage.getArgFloat(0);
+                    char buffer[15];
+                    sprintf(buffer, "/xFade %1.2f", xFade);
+                    statusMessage += buffer;
                 }
+        }
         else if (!strcmp( recMessage.getSubAddress() , "fadeUp" ))
+        {
             if (recMessage.getArgNum() == 1)
                 if (recMessage.getTypeTag(0) == 'f')
                 {
-                    double newFadeUp = recMessage.getArgFloat(0);
-                    statusMessage << "/fadeUp " << newFadeUp;
-                    xFade = newFadeUp;
+                    fadeUp = recMessage.getArgFloat(0);
+                    char buffer[15];
+                    sprintf(buffer, "/fadeUp %1.2f", fadeUp);
+                    statusMessage += buffer;
                 }
-        else statusMessage << recMessage.getSubAddress() << " - Ignoring";
+        }
+        else 
+        {
+            statusMessage += recMessage.getSubAddress();
+            statusMessage += " - Ignoring";
+        }
     }
     else
     {
-        statusMessage << "OSC: " << recMessage.getTopAddress() << " - Ignoring";
+        statusMessage = "OSC: ";
+        statusMessage += recMessage.getTopAddress();
+        statusMessage += " - Ignoring";
     }
     
     screen.clearBufferRow(kCommsStatusLine);
-    screen.textToBuffer(statusMessage.str(), kCommsStatusLine);
+    screen.textToBuffer(statusMessage, kCommsStatusLine);
     screen.sendBuffer();
-    if (debug) debug->printf("%s \r\n", statusMessage.str().c_str());
+    if (debug) debug->printf("%s \r\n", statusMessage.c_str());
     
 }
 
@@ -241,7 +249,7 @@ void processArtNet(float &xFade, float &fadeUp)
 
 void processDMXIn(float &xFade, float &fadeUp) 
 {
-    std::stringstream statusMessage;
+    char statusMessageBuffer[25];
 
     int xFadeDMX = dmx->get(kDMXInChannelXFade);
     int fadeUpDMX = dmx->get(kDMXInChannelFadeUp);
@@ -250,15 +258,15 @@ void processDMXIn(float &xFade, float &fadeUp)
     fadeUp = (float)fadeUpDMX/255;
 
     screen.clearBufferRow(kCommsStatusLine);
-    statusMessage << "DMX In: xF " << xFadeDMX << " fUp " << fadeUpDMX;
-    screen.textToBuffer(statusMessage.str(), kCommsStatusLine);
+    sprintf(statusMessageBuffer, "DMX In: xF %3i fUp %3i", xFadeDMX, fadeUpDMX);
+    screen.textToBuffer(statusMessageBuffer, kCommsStatusLine);
     screen.sendBuffer();
-    if (debug) debug->printf(statusMessage.str().c_str());
+    if (debug) debug->printf(statusMessageBuffer);
 }
 
 void processDMXOut(float &xFade, float &fadeUp) 
 {
-    std::stringstream statusMessage;
+    char statusMessageBuffer[25];
 
     int xFadeDMX = xFade*255;
     int fadeUpDMX = fadeUp*255;
@@ -267,10 +275,10 @@ void processDMXOut(float &xFade, float &fadeUp)
     dmx->put(kDMXOutChannelFadeUp, fadeUpDMX);
     
     screen.clearBufferRow(kCommsStatusLine);
-    statusMessage << "DMX Out: xF " << xFadeDMX << " fUp " << fadeUpDMX;
-    screen.textToBuffer(statusMessage.str(), kCommsStatusLine);
+    sprintf(statusMessageBuffer, "DMX Out: xF %3i fUp %3i", xFadeDMX, fadeUpDMX);
+    screen.textToBuffer(statusMessageBuffer, kCommsStatusLine);
     screen.sendBuffer();
-    if (debug) debug->printf(statusMessage.str().c_str());
+    if (debug) debug->printf(statusMessageBuffer);
 }
 
 inline float fadeCalc (const float AIN, const float tolerance) 
@@ -312,8 +320,8 @@ bool setKeyParamsTo(int index)
 void actionMixMode()
 {
     bool ok = true;
-    std::string sentOK;
-    std::stringstream sentMSG;
+    string sentOK;
+    char sentMSGBuffer[25];
 
     // Set Keyer
     if (mixMode < mixKey)
@@ -328,23 +336,23 @@ void actionMixMode()
         }
         
         ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerEnable, false);
-        sentMSG << "Keyer Off";                
+        sprintf(sentMSGBuffer, "Keyer Off");                
     }
     else
     {
-        ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerEnable, true);
-        sentMSG << "Keyer On";
-        
         int index = mixMode - mixKey;
+
+        ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerEnable, true);
         ok = ok && setKeyParamsTo(index);
-        sentMSG << " with " << index;
+ 
+        sprintf(sentMSGBuffer, "Keyer On with %i", index);
     }
 
     if (ok) sentOK = "Sent:";
     else sentOK = "Send Error:";
     
     screen.clearBufferRow(kTVOneStatusLine);
-    screen.textToBuffer(sentOK + sentMSG.str(), kTVOneStatusLine);
+    screen.textToBuffer(sentOK + sentMSGBuffer, kTVOneStatusLine);
     
     if (debug) { debug->printf("Changing mix mode"); }
 }
@@ -418,25 +426,21 @@ void selfTest()
 
     while(!menuEnc.hasPressed())
     {
-        stringstream xFadeReadOut; 
-        stringstream fadeToBlackReadOut;
-        stringstream tapsReadOut;
+        char xFadeReadOut[25]; 
+        char fadeToBlackReadOut[25];
+        char tapsReadOut[25];
         
-        xFadeReadOut.precision(2);
-        fadeToBlackReadOut.precision(2);
-        tapsReadOut.precision(1);
-        
-        xFadeReadOut << "Crossfade: " << xFadeAIN.read();
-        fadeToBlackReadOut << "Fade to black: " << fadeUpAIN.read();
-        tapsReadOut << "Tap left: " << tapLeftDIN.read() << " right: " << tapRightDIN.read();
+        sprintf(xFadeReadOut, "Crossfade: %1.3f", xFadeAIN.read());
+        sprintf(fadeToBlackReadOut, "Fade to black: %1.3f", fadeUpAIN.read());
+        sprintf(tapsReadOut, "Tap left: %i, right: %i", tapLeftDIN.read(), tapRightDIN.read());
         
         screen.clearBufferRow(1);
         screen.clearBufferRow(2);
         screen.clearBufferRow(3);
         
-        screen.textToBuffer(xFadeReadOut.str(), 1);
-        screen.textToBuffer(fadeToBlackReadOut.str(), 2);
-        screen.textToBuffer(tapsReadOut.str(), 3);
+        screen.textToBuffer(xFadeReadOut, 1);
+        screen.textToBuffer(fadeToBlackReadOut, 2);
+        screen.textToBuffer(tapsReadOut, 3);
         screen.sendBuffer();
     }
     
@@ -669,13 +673,11 @@ int main()
                     fadeCurve += menuChange * 0.05;
                     if (fadeCurve > 1.0f) fadeCurve = 1.0f;
                     if (fadeCurve < 0.0f) fadeCurve = 0.0f;
-                    
-                    /* Mystery Crash
-                    std::stringstream fadeCurveMessage;
-                    fadeCurveMessage << "Blend < " << fadeCurve << " > Additive";
+                                        
+                    char fadeCurveMessage[25];
+                    sprintf(fadeCurveMessage, "Blend < %1.2f > Additive", fadeCurve);
                     screen.clearBufferRow(kMenuLine2);
-                    screen.textToBuffer(fadeCurveMessage.str(), kMenuLine2);
-                    */
+                    screen.textToBuffer(fadeCurveMessage, kMenuLine2);
                     
                     if (debug) debug->printf("Fade curve changed by %i to %f", menuChange, fadeCurve);
                 }
@@ -739,22 +741,22 @@ int main()
                 ok = ok && tvOne.command(kTV1SourceRGB1, kTV1WindowIDA, kTV1FunctionAdjustSourceEDID, resolutionMenu.selectedItem().payload.command[1]);
                 ok = ok && tvOne.command(kTV1SourceRGB2, kTV1WindowIDA, kTV1FunctionAdjustSourceEDID, resolutionMenu.selectedItem().payload.command[1]);
                 
-                std::string sentOK;
+                string sentOK;
                 if (ok) sentOK = "Sent: ";
                 else sentOK = "Send Error: ";
                 
-                std::stringstream sentMSG;
-                sentMSG << "Res " << resolutionMenu.selectedItem().payload.command[0] << ", EDID " << resolutionMenu.selectedItem().payload.command[1];
+                char sentMSGBuffer[25];
+                sprintf(sentMSGBuffer, "Res %i, EDID %i", resolutionMenu.selectedItem().payload.command[0], resolutionMenu.selectedItem().payload.command[1]);
                 
                 screen.clearBufferRow(kTVOneStatusLine);
-                screen.textToBuffer(sentOK + sentMSG.str(), kTVOneStatusLine);
+                screen.textToBuffer(sentOK + sentMSGBuffer, kTVOneStatusLine);
                 
                 if (debug) { debug->printf("Changing resolution"); }
             }
             else if (selectedMenu == &commsMenu)
             {
-                std::string commsTypeString = "Network: --";
-                std::stringstream commsStatus;
+                string commsTypeString = "Network: --";
+                char commsStatusBuffer[25];
             
                 // Tear down any existing comms
                 // This is the action of commsNone
@@ -790,7 +792,7 @@ int main()
                     if(ethError)
                     {
                         if (debug) debug->printf("Ethernet setup error, %d", ethError);
-                        commsStatus << "Ethernet setup failed";
+                        sprintf(commsStatusBuffer, "Ethernet setup failed");
                         commsMenu = commsNone;
                         // break out of here. this setup should be a function that returns a boolean
                     }
@@ -799,7 +801,7 @@ int main()
                     osc->setReceiveMessage(&recMessage);
                     osc->begin(kOSCMbedPort);
                     
-                    commsStatus << "Listening on " << kOSCMbedPort;
+                    sprintf(commsStatusBuffer, "Listening on %s", kOSCMbedPort);
                 }
                 else if (commsMenu.selectedItem().payload.command[0] == commsArtNet) 
                 {
@@ -820,7 +822,7 @@ int main()
                     artNet->Init();
                     artNet->SendArtPollReply(); // announce to art-net nodes
                     
-                    commsStatus << "Listening";
+                    sprintf(commsStatusBuffer, "Listening");
                 }
                 else if (commsMenu.selectedItem().payload.command[0] == commsDMXIn) 
                 {
@@ -842,7 +844,7 @@ int main()
                 }
                                 
                 screen.clearBufferRow(kCommsStatusLine);
-                screen.textToBuffer(commsTypeString + commsStatus.str(), kCommsStatusLine);
+                screen.textToBuffer(commsTypeString + commsStatusBuffer, kCommsStatusLine);
             }
             else if (selectedMenu == &advancedMenu)
             {

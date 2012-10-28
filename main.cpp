@@ -506,6 +506,52 @@ void selfTest()
     mbed_reset();
 }
 
+void setResolutionMenuItems()
+{
+    resolutionMenu.clearMenuItems();
+    for (int i=0; i < settings.resolutionsCount(); i++)
+    {
+        resolutionMenu.addMenuItem(SPKMenuItem(settings.resolutionName(i), settings.resolutionIndex(i), settings.resolutionEDIDIndex(i)));
+    }
+    resolutionMenu.addMenuItem(SPKMenuItem("Back to Main Menu", &mainMenu));
+}
+
+void setMixModeMenuItems()
+{
+    mixModeMenu.clearMenuItems();
+    
+    mixModeMenu.addMenuItem(SPKMenuItem("Blend", mixBlend));
+    if (true) mixModeMenu.addMenuItem(SPKMenuItem("Additive", &mixModeAdditiveMenu)); // TODO: Detect whether SPKDF custom firmware
+    
+    for (int i=0; i < settings.keyerSetCount(); i++)
+    {
+        mixModeMenu.addMenuItem(SPKMenuItem(settings.keyerParamName(i), mixKey+i));
+    }
+    mixModeMenu.addMenuItem(SPKMenuItem("Back to Main Menu", &mainMenu));
+}
+
+void setCommsMenuItems()
+{
+    if (rj45Mode == rj45Ethernet) 
+    {
+        commsMenu.title = "Network Mode [Ethernet]";
+        commsMenu.clearMenuItems();
+        commsMenu.addMenuItem(SPKMenuItem("None", commsNone));
+        commsMenu.addMenuItem(SPKMenuItem("OSC", commsOSC));
+        commsMenu.addMenuItem(SPKMenuItem("ArtNet", commsArtNet));
+        commsMenu.addMenuItem(SPKMenuItem("Back to Main Menu", &mainMenu));
+    }
+    else if (rj45Mode == rj45DMX) 
+    {
+        commsMenu.title = "Network Mode [DMX]";
+        commsMenu.clearMenuItems();
+        commsMenu.addMenuItem(SPKMenuItem("None", commsNone));
+        commsMenu.addMenuItem(SPKMenuItem("DMX In", commsDMXIn));
+        commsMenu.addMenuItem(SPKMenuItem("DMX Out", commsDMXOut));
+        commsMenu.addMenuItem(SPKMenuItem("Back to Main Menu", &mainMenu));
+    }
+}
+
 int main() 
 {
     if (debug) 
@@ -528,35 +574,21 @@ int main()
     
     // Load saved settings
     bool settingsAreCustom = false;
-/* CRAZY, see note in spk_settings.h   
     settingsAreCustom = settings.load(kSPKDFSettingsFilename);
-    if (settingsAreCustom)
-    {screen.textToBuffer("Settings Read",2); screen.sendBuffer();}
-    else 
-    {screen.textToBuffer("Settings NOT Read",2); screen.sendBuffer();}
-*/    
+    if (settingsAreCustom) {screen.textToBuffer("SPKDF.ini OK", 0); screen.sendBuffer();}
+
     // Set menu structure
     mixModeMenu.title = "Mix Mode";
-    mixModeMenu.addMenuItem(SPKMenuItem("Blend", mixBlend));
-    if (true) mixModeMenu.addMenuItem(SPKMenuItem("Additive", &mixModeAdditiveMenu)); // TODO: Detect whether SPKDF custom firmware
-    for (int i=0; i < settings.keyerSetCount(); i++)
-    {
-        mixModeMenu.addMenuItem(SPKMenuItem(settings.keyerParamName(i), mixKey+i));
-    }
-    mixModeMenu.addMenuItem(SPKMenuItem("Back to Main Menu", &mainMenu));
+    setMixModeMenuItems();
     
     mixModeAdditiveMenu.title = "Additive - adjust midpoint";
     mixModeAdditiveMenu.addMenuItem(SPKMenuItem("click to return", &mixModeMenu, true));
  
     resolutionMenu.title = "Resolution";
-    for (int i=0; i < settings.resolutionsCount(); i++)
-    {
-        resolutionMenu.addMenuItem(SPKMenuItem(settings.resolutionName(i), settings.resolutionIndex(i), settings.resolutionEDIDIndex(i)));
-    }
-    resolutionMenu.addMenuItem(SPKMenuItem("Back to Main Menu", &mainMenu));
+    setResolutionMenuItems();
 
-    commsMenu.title = "Network Mode"; 
-    // commsMenu is built in mixer's run loop, depending on RJ45 mode.
+    commsMenu.title = "Network Mode";
+    setCommsMenuItems();
     
     advancedMenu.title = "Troubleshooting"; 
     advancedMenu.addMenuItem(SPKMenuItem("HDCP Off", advancedHDCPOff));
@@ -625,26 +657,11 @@ int main()
         if (rj45ModeDIN != rj45Mode)
         {
             if (debug) debug->printf("Handling RJ45 mode change\r\n");   
+
             // update state
             rj45Mode = rj45ModeDIN;
-            if (rj45Mode == rj45Ethernet) 
-            {
-                commsMenu.title = "Network Mode [Ethernet]";
-                commsMenu.clearMenuItems();
-                commsMenu.addMenuItem(SPKMenuItem("None", commsNone));
-                commsMenu.addMenuItem(SPKMenuItem("OSC", commsOSC));
-                commsMenu.addMenuItem(SPKMenuItem("ArtNet", commsArtNet));
-                commsMenu.addMenuItem(SPKMenuItem("Back to Main Menu", &mainMenu));
-            }
-            if (rj45Mode == rj45DMX) 
-            {
-                commsMenu.title = "Network Mode [DMX]";
-                commsMenu.clearMenuItems();
-                commsMenu.addMenuItem(SPKMenuItem("None", commsNone));
-                commsMenu.addMenuItem(SPKMenuItem("DMX In", commsDMXIn));
-                commsMenu.addMenuItem(SPKMenuItem("DMX Out", commsDMXOut));
-                commsMenu.addMenuItem(SPKMenuItem("Back to Main Menu", &mainMenu));
-            }
+            
+            setCommsMenuItems();
             
             // cancel old comms
             commsMode = commsNone;
@@ -888,6 +905,8 @@ int main()
                 else if (advancedMenu.selectedItem().payload.command[0] == advancedLoadDefaults)
                 {
                     settings.loadDefaults();
+                    setMixModeMenuItems();
+                    setResolutionMenuItems();
                     
                     screen.clearBufferRow(kTVOneStatusLine);
                     screen.textToBuffer("Controller reverted", kTVOneStatusLine);

@@ -2,8 +2,6 @@
 #include <string>
 #include <vector>
 
-// CRAZY: When this file is used in a test program, doesn't need the extern to compile, and works perfectly.
-// When this file is used in SPK-DVIMXR, requires the extern to compile and crashes on iniparser_load
 extern "C" 
 {
 #include "iniparser.h"
@@ -20,6 +18,9 @@ public:
     {
         //// KEYS
         
+        keyerParamNames.clear();
+        keyerParamSets.clear();
+        
         // Parameter Set: minY, maxY, minU, maxU, minV, maxV
         int paramSet1[6] = {0, 18, 128, 129, 128, 129};
         keyerParamNames.push_back("Lumakey");
@@ -30,6 +31,10 @@ public:
         keyerParamSets.push_back(paramSet2);
         
         //// RESOLUTIONS
+        
+        resolutionNames.clear();
+        resolutionIndexes.clear();
+        resolutionEDIDIndexes.clear();
         
         resolutionNames.push_back(kTV1ResolutionDescriptionVGA);
         resolutionIndexes.push_back(kTV1ResolutionVGA);

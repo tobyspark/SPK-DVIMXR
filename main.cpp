@@ -109,6 +109,8 @@
 // 8.3 format filename only, no subdirs
 #define kSPKDFSettingsFilename "SPKDF.ini"
 
+#define kStringBufferLength 30
+
 //// DEBUG
 
 // Comment out one or the other...
@@ -204,7 +206,7 @@ void processOSC(float &xFade, float &fadeUp) {
                 {
                     xFade = recMessage.getArgFloat(0);
                     char buffer[15];
-                    sprintf(buffer, "/xFade %1.2f", xFade);
+                    snprintf(buffer, kStringBufferLength, "/xFade %1.2f", xFade);
                     statusMessage += buffer;
                 }
         }
@@ -215,7 +217,7 @@ void processOSC(float &xFade, float &fadeUp) {
                 {
                     fadeUp = recMessage.getArgFloat(0);
                     char buffer[15];
-                    sprintf(buffer, "/fadeUp %1.2f", fadeUp);
+                    snprintf(buffer, kStringBufferLength, "/fadeUp %1.2f", fadeUp);
                     statusMessage += buffer;
                 }
         }
@@ -249,7 +251,7 @@ void processArtNet(float &xFade, float &fadeUp)
 
 void processDMXIn(float &xFade, float &fadeUp) 
 {
-    char statusMessageBuffer[25];
+    char statusMessageBuffer[kStringBufferLength];
 
     int xFadeDMX = dmx->get(kDMXInChannelXFade);
     int fadeUpDMX = dmx->get(kDMXInChannelFadeUp);
@@ -258,7 +260,7 @@ void processDMXIn(float &xFade, float &fadeUp)
     fadeUp = (float)fadeUpDMX/255;
 
     screen.clearBufferRow(kCommsStatusLine);
-    sprintf(statusMessageBuffer, "DMX In: xF %3i fUp %3i", xFadeDMX, fadeUpDMX);
+    snprintf(statusMessageBuffer, kStringBufferLength, "DMX In: xF %3i fUp %3i", xFadeDMX, fadeUpDMX);
     screen.textToBuffer(statusMessageBuffer, kCommsStatusLine);
     screen.sendBuffer();
     if (debug) debug->printf(statusMessageBuffer);
@@ -266,7 +268,7 @@ void processDMXIn(float &xFade, float &fadeUp)
 
 void processDMXOut(float &xFade, float &fadeUp) 
 {
-    char statusMessageBuffer[25];
+    char statusMessageBuffer[kStringBufferLength];
 
     int xFadeDMX = xFade*255;
     int fadeUpDMX = fadeUp*255;
@@ -275,7 +277,7 @@ void processDMXOut(float &xFade, float &fadeUp)
     dmx->put(kDMXOutChannelFadeUp, fadeUpDMX);
     
     screen.clearBufferRow(kCommsStatusLine);
-    sprintf(statusMessageBuffer, "DMX Out: xF %3i fUp %3i", xFadeDMX, fadeUpDMX);
+    snprintf(statusMessageBuffer, kStringBufferLength, "DMX Out: xF %3i fUp %3i", xFadeDMX, fadeUpDMX);
     screen.textToBuffer(statusMessageBuffer, kCommsStatusLine);
     screen.sendBuffer();
     if (debug) debug->printf(statusMessageBuffer);
@@ -321,7 +323,7 @@ void actionMixMode()
 {
     bool ok = true;
     string sentOK;
-    char sentMSGBuffer[25];
+    char sentMSGBuffer[kStringBufferLength];
 
     // Set Keyer
     if (mixMode < mixKey)
@@ -336,7 +338,7 @@ void actionMixMode()
         }
         
         ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerEnable, false);
-        sprintf(sentMSGBuffer, "Keyer Off");                
+        snprintf(sentMSGBuffer, kStringBufferLength, "Keyer Off");                
     }
     else
     {
@@ -345,7 +347,7 @@ void actionMixMode()
         ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerEnable, true);
         ok = ok && setKeyParamsTo(index);
  
-        sprintf(sentMSGBuffer, "Keyer On with %i", index);
+        snprintf(sentMSGBuffer, kStringBufferLength, "Keyer On with %i", index);
     }
 
     if (ok) sentOK = "Sent:";
@@ -426,13 +428,13 @@ void selfTest()
 
     while(!menuEnc.hasPressed())
     {
-        char xFadeReadOut[25]; 
-        char fadeToBlackReadOut[25];
-        char tapsReadOut[25];
+        char xFadeReadOut[kStringBufferLength]; 
+        char fadeToBlackReadOut[kStringBufferLength];
+        char tapsReadOut[kStringBufferLength];
         
-        sprintf(xFadeReadOut, "Crossfade: %1.3f", xFadeAIN.read());
-        sprintf(fadeToBlackReadOut, "Fade to black: %1.3f", fadeUpAIN.read());
-        sprintf(tapsReadOut, "Tap left: %i, right: %i", tapLeftDIN.read(), tapRightDIN.read());
+        snprintf(xFadeReadOut, kStringBufferLength, "Crossfade: %1.3f", xFadeAIN.read());
+        snprintf(fadeToBlackReadOut, kStringBufferLength, "Fade to black: %1.3f", fadeUpAIN.read());
+        snprintf(tapsReadOut, kStringBufferLength, "Tap left: %i, right: %i", tapLeftDIN.read(), tapRightDIN.read());
         
         screen.clearBufferRow(1);
         screen.clearBufferRow(2);
@@ -615,7 +617,6 @@ int main()
         //// Task background things
         if (ethernet && rj45Mode == rj45Ethernet)
         {
-            if (debug) debug->printf("net poll");
             Net::poll();
         }
 
@@ -674,8 +675,8 @@ int main()
                     if (fadeCurve > 1.0f) fadeCurve = 1.0f;
                     if (fadeCurve < 0.0f) fadeCurve = 0.0f;
                                         
-                    char fadeCurveMessage[25];
-                    sprintf(fadeCurveMessage, "Blend < %1.2f > Additive", fadeCurve);
+                    char fadeCurveMessage[kStringBufferLength];
+                    snprintf(fadeCurveMessage, kStringBufferLength, "Blend < %1.2f > Additive", fadeCurve);
                     screen.clearBufferRow(kMenuLine2);
                     screen.textToBuffer(fadeCurveMessage, kMenuLine2);
                     
@@ -745,8 +746,8 @@ int main()
                 if (ok) sentOK = "Sent: ";
                 else sentOK = "Send Error: ";
                 
-                char sentMSGBuffer[25];
-                sprintf(sentMSGBuffer, "Res %i, EDID %i", resolutionMenu.selectedItem().payload.command[0], resolutionMenu.selectedItem().payload.command[1]);
+                char sentMSGBuffer[kStringBufferLength];
+                snprintf(sentMSGBuffer, kStringBufferLength,"Res %i, EDID %i", resolutionMenu.selectedItem().payload.command[0], resolutionMenu.selectedItem().payload.command[1]);
                 
                 screen.clearBufferRow(kTVOneStatusLine);
                 screen.textToBuffer(sentOK + sentMSGBuffer, kTVOneStatusLine);
@@ -755,12 +756,13 @@ int main()
             }
             else if (selectedMenu == &commsMenu)
             {
-                string commsTypeString = "Network: --";
-                char commsStatusBuffer[25];
+                string commsTypeString = "Network:";
+                char commsStatusBuffer[kStringBufferLength] = "--";
             
                 // Tear down any existing comms
                 // This is the action of commsNone
                 // And also clears the way for other comms actions
+                commsMode = commsNone;
                 if (osc)        {delete osc; osc = NULL;}  
                 if (ethernet)   {delete ethernet; ethernet = NULL;}
                 if (artNet)     {delete artNet; artNet = NULL;}
@@ -792,7 +794,7 @@ int main()
                     if(ethError)
                     {
                         if (debug) debug->printf("Ethernet setup error, %d", ethError);
-                        sprintf(commsStatusBuffer, "Ethernet setup failed");
+                        snprintf(commsStatusBuffer, kStringBufferLength, "Ethernet setup failed");
                         commsMenu = commsNone;
                         // break out of here. this setup should be a function that returns a boolean
                     }
@@ -801,7 +803,7 @@ int main()
                     osc->setReceiveMessage(&recMessage);
                     osc->begin(kOSCMbedPort);
                     
-                    sprintf(commsStatusBuffer, "Listening on %s", kOSCMbedPort);
+                    snprintf(commsStatusBuffer, kStringBufferLength, "Listening on %i", kOSCMbedPort);
                 }
                 else if (commsMenu.selectedItem().payload.command[0] == commsArtNet) 
                 {
@@ -822,7 +824,7 @@ int main()
                     artNet->Init();
                     artNet->SendArtPollReply(); // announce to art-net nodes
                     
-                    sprintf(commsStatusBuffer, "Listening");
+                    snprintf(commsStatusBuffer, kStringBufferLength, "Listening");
                 }
                 else if (commsMenu.selectedItem().payload.command[0] == commsDMXIn) 
                 {

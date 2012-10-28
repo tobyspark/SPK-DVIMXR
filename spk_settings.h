@@ -131,8 +131,9 @@ public:
             bool keyParamReadOK = true;
             bool keyParamCleared = false;
             
-            char* failString = "Failed to read";
-            int failInt = -1;
+            char* const failString = "Failed to read";
+            const int failInt = -1;
+            const int stringLength = 11;
             
             // Loop through [Key1,2,...,99] sections
             while(keyParamReadOK)
@@ -140,33 +141,33 @@ public:
                 int     paramSet[6];
                 char*   paramName;
                 
-                char key[11];
+                char key[stringLength];
         
-                sprintf(key, "Key%i:Name", counter);
+                snprintf(key, stringLength, "Key%i:Name", counter);
                 paramName = iniparser_getstring(settings, key, failString);
                 keyParamReadOK = keyParamReadOK && strcmp(paramName, failString);
                        
-                sprintf(key, "Key%i:MinY", counter);
+                snprintf(key, stringLength, "Key%i:MinY", counter);
                 paramSet[0] = iniparser_getint(settings, key, failInt);
                 keyParamReadOK = keyParamReadOK && (paramSet[0] != failInt);
 
-                sprintf(key, "Key%i:MaxY", counter);
+                snprintf(key, stringLength, "Key%i:MaxY", counter);
                 paramSet[1] = iniparser_getint(settings, key, failInt);
                 keyParamReadOK = keyParamReadOK && (paramSet[1] != failInt);
                 
-                sprintf(key, "Key%i:MinU", counter);
+                snprintf(key, stringLength, "Key%i:MinU", counter);
                 paramSet[2] = iniparser_getint(settings, key, failInt);
                 keyParamReadOK = keyParamReadOK && (paramSet[2] != failInt);
                 
-                sprintf(key, "Key%i:MaxU", counter);
+                snprintf(key, stringLength, "Key%i:MaxU", counter);
                 paramSet[3] = iniparser_getint(settings, key, failInt);
                 keyParamReadOK = keyParamReadOK && (paramSet[3] != failInt);
                 
-                sprintf(key, "Key%i:MinV", counter);
+                snprintf(key, stringLength, "Key%i:MinV", counter);
                 paramSet[4] = iniparser_getint(settings, key, failInt);
                 keyParamReadOK = keyParamReadOK && (paramSet[4] != failInt);
                 
-                sprintf(key, "Key%i:MaxV", counter);
+                snprintf(key, stringLength, "Key%i:MaxV", counter);
                 paramSet[5] = iniparser_getint(settings, key, failInt);
                 keyParamReadOK = keyParamReadOK && (paramSet[5] != failInt);
                 
@@ -201,8 +202,9 @@ public:
             bool resolutionReadOK = true;
             bool resolutionCleared = false;
             
-            char* failString = "Failed to read";
-            int failInt = -1;
+            char* const failString = "Failed to read";
+            const int failInt = -1;
+            const int stringLength = 25;
             
             // Loop through [Key1,2,...,99] sections
             while(resolutionReadOK)
@@ -211,17 +213,17 @@ public:
                 int     resolutionIndex;
                 int     resolutionEDIDIndex;
                 
-                char key[18];
+                char key[stringLength];
         
-                sprintf(key, "Resolution%i:Name", counter);
+                snprintf(key, stringLength, "Resolution%i:Name", counter);
                 resolutionName = iniparser_getstring(settings, key, failString);
                 resolutionReadOK = resolutionReadOK && strcmp(resolutionName, failString);
                        
-                sprintf(key, "Resolution%i:Number", counter);
+                snprintf(key, stringLength, "Resolution%i:Number", counter);
                 resolutionIndex = iniparser_getint(settings, key, failInt);
                 resolutionReadOK = resolutionReadOK && (resolutionIndex != failInt);
 
-                sprintf(key, "Resolution%i:EDIDNumber", counter);
+                snprintf(key, stringLength, "Resolution%i:EDIDNumber", counter);
                 resolutionEDIDIndex = iniparser_getint(settings, key, failInt);
                 resolutionReadOK = resolutionReadOK && (resolutionEDIDIndex != failInt);
                 

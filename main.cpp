@@ -114,8 +114,8 @@
 //// DEBUG
 
 // Comment out one or the other...
-Serial *debug = new Serial(USBTX, USBRX); // For debugging via USB serial
-//Serial *debug = NULL; // For release (no debugging)
+//Serial *debug = new Serial(USBTX, USBRX); // For debugging via USB serial
+Serial *debug = NULL; // For release (no debugging)
 
 //// SOFT RESET
 
@@ -157,16 +157,16 @@ SPKMenu resolutionMenu;
 
 SPKMenu mixModeMenu;
 SPKMenu mixModeAdditiveMenu; 
-enum { mixBlend, mixAdditive, mixKey }; // additive will require custom TVOne firmware.
+enum { mixSafe, mixBlend, mixAdditive, mixKey }; // additive will require custom TVOne firmware.
 int mixMode = mixBlend;
-float fadeCurve = 1.0f; // 0 = "X", ie. as per blend, 1 = "/\"  <-- pictograms!
+float fadeCurve = 0.0f; // 0 = "X", ie. as per blend, 1 = "/\", ie. as per additive  <-- pictograms!
 
 SPKMenu commsMenu;
 enum { commsNone, commsOSC, commsArtNet, commsDMXIn, commsDMXOut};
 int commsMode = commsNone;
 
 SPKMenu advancedMenu;
-enum { advancedHDCPOn, advancedHDCPOff, advancedConformProcessor, advancedLoadDefaults, advancedSelfTest, advancedSetResolutions };
+enum { advancedHDCPOn, advancedHDCPOff, advancedMixModeSafe, advancedConformProcessor, advancedLoadDefaults, advancedSelfTest, advancedSetResolutions };
 
 // RJ45 Comms
 enum { rj45Ethernet = 0, rj45DMX = 1}; // These values from circuit
@@ -328,7 +328,7 @@ void actionMixMode()
     // Set Keyer
     if (mixMode < mixKey)
     {
-        if (mixMode == mixBlend)
+        if (mixMode == mixBlend || mixMode == mixSafe)
         {
             // Waiting on TV One...
         }
@@ -519,10 +519,7 @@ void setResolutionMenuItems()
 void setMixModeMenuItems()
 {
     mixModeMenu.clearMenuItems();
-    
-    mixModeMenu.addMenuItem(SPKMenuItem("Blend", mixBlend));
-    if (true) mixModeMenu.addMenuItem(SPKMenuItem("Additive", &mixModeAdditiveMenu)); // TODO: Detect whether SPKDF custom firmware
-    
+    mixModeMenu.addMenuItem(SPKMenuItem("Crossfade", &mixModeAdditiveMenu));
     for (int i=0; i < settings.keyerSetCount(); i++)
     {
         mixModeMenu.addMenuItem(SPKMenuItem(settings.keyerParamName(i), mixKey+i));
@@ -581,8 +578,8 @@ int main()
     mixModeMenu.title = "Mix Mode";
     setMixModeMenuItems();
     
-    mixModeAdditiveMenu.title = "Additive - adjust midpoint";
-    mixModeAdditiveMenu.addMenuItem(SPKMenuItem("click to return", &mixModeMenu, true));
+    mixModeAdditiveMenu.title = "Crossfade";
+    mixModeAdditiveMenu.addMenuItem(SPKMenuItem("Twist then click", &mixModeMenu, true));
  
     resolutionMenu.title = "Resolution";
     setResolutionMenuItems();
@@ -593,6 +590,7 @@ int main()
     advancedMenu.title = "Troubleshooting"; 
     advancedMenu.addMenuItem(SPKMenuItem("HDCP Off", advancedHDCPOff));
     advancedMenu.addMenuItem(SPKMenuItem("HDCP On", advancedHDCPOn));
+    advancedMenu.addMenuItem(SPKMenuItem("Basic mix mode", advancedMixModeSafe));
     advancedMenu.addMenuItem(SPKMenuItem("Conform Processor", advancedConformProcessor));
     if (settingsAreCustom) advancedMenu.addMenuItem(SPKMenuItem("Revert to defaults", advancedLoadDefaults));
     advancedMenu.addMenuItem(SPKMenuItem("Start Self-Test", advancedSelfTest));
@@ -691,11 +689,12 @@ int main()
                     fadeCurve += menuChange * 0.05;
                     if (fadeCurve > 1.0f) fadeCurve = 1.0f;
                     if (fadeCurve < 0.0f) fadeCurve = 0.0f;
-                                        
-                    char fadeCurveMessage[kStringBufferLength];
-                    snprintf(fadeCurveMessage, kStringBufferLength, "Blend < %1.2f > Additive", fadeCurve);
+                    
+                    mixMode = (fadeCurve > 0.0f) ? mixAdditive: mixBlend;
+
                     screen.clearBufferRow(kMenuLine2);
-                    screen.textToBuffer(fadeCurveMessage, kMenuLine2);
+                    screen.textToBuffer("Blend [ ----- ] Add", kMenuLine2);
+                    screen.characterToBuffer('X', 38 + fadeCurve*20.0f, kMenuLine2);
                     
                     if (debug) debug->printf("Fade curve changed by %i to %f", menuChange, fadeCurve);
                 }
@@ -741,7 +740,11 @@ int main()
                 // Are we changing menus that should have a command attached?
                 if (selectedMenu == &mixModeAdditiveMenu)
                 {
-                    mixMode = mixAdditive;
+                    screen.clearBufferRow(kMenuLine2);
+                    screen.textToBuffer("Blend [ ----- ] Add", kMenuLine2);
+                    screen.characterToBuffer('X', 38 + fadeCurve*20.0f, kMenuLine2);
+                    
+                    mixMode = fadeCurve > 0 ? mixAdditive : mixBlend;
                     actionMixMode();
                 }
             }
@@ -889,6 +892,12 @@ int main()
                     screen.clearBufferRow(kTVOneStatusLine);
                     screen.textToBuffer(sendOK, kTVOneStatusLine);
                 }
+                else if (advancedMenu.selectedItem().payload.command[0] == advancedMixModeSafe)
+                {
+                    mixMode = mixSafe;
+                    
+                    actionMixMode();
+                }
                 else if (advancedMenu.selectedItem().payload.command[0] == advancedConformProcessor)
                 {
                     screen.clearBufferRow(kTVOneStatusLine);
@@ -1012,20 +1021,15 @@ int main()
         int newFadeAPercent = 0;
         int newFadeBPercent = 0;
 
-        if (mixMode == mixBlend) 
+        if (mixMode == mixSafe) 
         {
-            if (fadeUp < 1.0) // TODO: OR if a source is not valid
-            {
-                // we need to set fade level of both windows as there is no way AFAIK to implement fade to black as a further window on top of A&B
-                newFadeAPercent = (1.0-xFade) * fadeUp * 100.0;
-                newFadeBPercent = xFade * fadeUp * 100.0;
-            }
-            else
-            {
-                // we can optimise and just fade A in and out over a fully up B, doubling the rate of fadeA commands sent.
-                newFadeAPercent = (1.0-xFade) * 100.0;
-                newFadeBPercent = 100.0;
-            }
+            newFadeAPercent = (1.0-xFade) * fadeUp * 100.0;
+            newFadeBPercent = xFade * fadeUp * 100.0;
+        }
+        else if (mixMode == mixBlend) 
+        {
+            newFadeAPercent = (1.0-xFade) * fadeUp * 100.0;
+            newFadeBPercent = fadeUp * 100.0;
         }
         else if (mixMode == mixAdditive)
         {

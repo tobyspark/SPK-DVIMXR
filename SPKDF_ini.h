@@ -37,7 +37,7 @@ Number = 83
 EDIDNumber = 5
 
 [Resolution5]
-Name = WUXGA (1920x200)
+Name = WUXGA (1920x1200)
 Number = 105
 EDIDNumber = 5
 

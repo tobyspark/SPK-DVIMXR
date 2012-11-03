@@ -116,8 +116,8 @@
 //// DEBUG
 
 // Comment out one or the other...
-//Serial *debug = new Serial(USBTX, USBRX); // For debugging via USB serial
-Serial *debug = NULL; // For release (no debugging)
+Serial *debug = new Serial(USBTX, USBRX); // For debugging via USB serial
+//Serial *debug = NULL; // For release (no debugging)
 
 //// SOFT RESET
 
@@ -198,6 +198,11 @@ int keyerParamsSet = -1; // last keyParams index uploaded to unit
 // TVOne input sources stable flag
 bool tvOneRGB1Stable = true; // init true as this is conformed state of mixer, ie. RGB1 not SIS1
 bool tvOneRGB2Stable = true;
+
+// TVOne behaviour flags
+bool tvOneHDCPOn = false;
+bool tvOneEDIDPassthrough = true;
+const int32_t EDIDPassthroughSlot = 7;
 
 void processOSC(float &xFade, float &fadeUp) {
     string statusMessage;
@@ -299,7 +304,7 @@ inline float fadeCalc (const float AIN, const float tolerance)
     return pos;
 }
 
-bool handleTVOneSources()
+bool handleTVOneSources(bool updateScreenOverride = false)
 {
     bool ok = true;
 
@@ -331,8 +336,8 @@ bool handleTVOneSources()
     if (RGB2 && !tvOneRGB2Stable) tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustWindowsWindowSource, kTV1SourceRGB2);
     if (!RGB1 && tvOneRGB1Stable) tvOne.command(0, kTV1WindowIDB, kTV1FunctionAdjustWindowsWindowSource, kTV1SourceSIS1);
     if (!RGB2 && tvOneRGB2Stable) tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustWindowsWindowSource, kTV1SourceSIS2);
-    
-    if (RGB1 != tvOneRGB1Stable || RGB2 != tvOneRGB2Stable)
+     
+    if (updateScreenOverride || (RGB1 != tvOneRGB1Stable || RGB2 != tvOneRGB2Stable))
     {
         screen.clearBufferRow(kTVOneStatusLine);
         screen.textToBuffer(tvOneDetectString, kTVOneStatusLine); 
@@ -354,12 +359,12 @@ bool setKeyParamsTo(int index)
     
     if (index != keyerParamsSet)
     {
-        ok =       tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerMinY, settings.keyerParamSet(index)[0]); 
-        ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerMaxY, settings.keyerParamSet(index)[1]); 
-        ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerMinU, settings.keyerParamSet(index)[2]); 
-        ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerMaxU, settings.keyerParamSet(index)[3]); 
-        ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerMinV, settings.keyerParamSet(index)[4]); 
-        ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerMaxV, settings.keyerParamSet(index)[5]);
+        ok =       tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerMinY, settings.keyerParamSet(index)[SPKSettings::minY]); 
+        ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerMaxY, settings.keyerParamSet(index)[SPKSettings::maxY]); 
+        ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerMinU, settings.keyerParamSet(index)[SPKSettings::minU]); 
+        ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerMaxU, settings.keyerParamSet(index)[SPKSettings::maxU]); 
+        ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerMinV, settings.keyerParamSet(index)[SPKSettings::minV]); 
+        ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerMaxV, settings.keyerParamSet(index)[SPKSettings::maxV]);
         
         keyerParamsSet = index;
     }
@@ -373,6 +378,8 @@ bool setKeyParamsTo(int index)
 
 void actionMixMode()
 {
+    if (debug) debug->printf("Changing mix mode \r\n");
+
     bool ok = true;
     string sentOK;
     char sentMSGBuffer[kStringBufferLength];
@@ -380,17 +387,23 @@ void actionMixMode()
     // Set Keyer
     if (mixMode < mixKey)
     {
-        if (mixMode == mixBlend)
-        {
-            // Waiting on TV One...
-        }
-        else if (mixMode == mixAdditive)
-        {
-            // Waiting on TV One...
-        }
-        
+        // Set Keyer Off. Quicker to set and fail than to test for on and then turn off
         ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerEnable, false);
-        snprintf(sentMSGBuffer, kStringBufferLength, "Keyer Off");                
+        
+        if (mixMode == mixBlend)    
+        {
+            // Turn off Additive Mixing on output
+            ok = tvOne.command(0, kTV1WindowIDA, 0x298, 0);
+            snprintf(sentMSGBuffer, kStringBufferLength, "Blend");
+        }
+        if (mixMode == mixAdditive) 
+        {   
+            // First set B to what you'd expect for additive; it may be left at 100 if optimised blend mixing was previous mixmode.
+            ok =       tvOne.command(0, kTV1WindowIDB, kTV1FunctionAdjustWindowsMaxFadeLevel, fadeBPercent);
+            // Then turn on Additive Mixing
+            ok = ok && tvOne.command(0, kTV1WindowIDA, 0x298, 1);
+            snprintf(sentMSGBuffer, kStringBufferLength, "Additive");
+        }                
     }
     else
     {
@@ -407,8 +420,6 @@ void actionMixMode()
     
     screen.clearBufferRow(kTVOneStatusLine);
     screen.textToBuffer(sentOK + sentMSGBuffer, kTVOneStatusLine);
-    
-    if (debug) { debug->printf("Changing mix mode"); }
 }
 
 
@@ -449,9 +460,10 @@ bool conformProcessor()
     ok = ok && tvOne.command(kTV1SourceRGB2, kTV1WindowIDA, kTV1FunctionAdjustSourceOnSourceLoss, freeze);
     
     // Set resolution and fade levels for maximum chance of being seen
+    int32_t slot = tvOneEDIDPassthrough ? EDIDPassthroughSlot : 5;
     ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustOutputsOutputResolution, kTV1ResolutionVGA);
-    ok = ok && tvOne.command(kTV1SourceRGB1, kTV1WindowIDA, kTV1FunctionAdjustSourceEDID, 7);
-    ok = ok && tvOne.command(kTV1SourceRGB2, kTV1WindowIDA, kTV1FunctionAdjustSourceEDID, 7);
+    ok = ok && tvOne.command(kTV1SourceRGB1, kTV1WindowIDA, kTV1FunctionAdjustSourceEDID, slot);
+    ok = ok && tvOne.command(kTV1SourceRGB2, kTV1WindowIDA, kTV1FunctionAdjustSourceEDID, slot);
     ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustWindowsMaxFadeLevel, 100);
     ok = ok && tvOne.command(0, kTV1WindowIDB, kTV1FunctionAdjustWindowsMaxFadeLevel, 100);
     
@@ -654,10 +666,10 @@ int main()
     advancedMenu.title = "Troubleshooting"; 
     advancedMenu.addMenuItem(SPKMenuItem("HDCP Off", advancedHDCPOff));
     advancedMenu.addMenuItem(SPKMenuItem("HDCP On", advancedHDCPOn));
+    advancedMenu.addMenuItem(SPKMenuItem("EDID Passthrough", advancedEDIDPassthrough)); // have global setting of passthrough that overrides resolution sets and is saved with conform processor
+    advancedMenu.addMenuItem(SPKMenuItem("EDID Internal", advancedEDIDInternal));
     advancedMenu.addMenuItem(SPKMenuItem("Test Processor Sources", advancedTestSources));
     advancedMenu.addMenuItem(SPKMenuItem("Conform Processor", advancedConformProcessor));
-    //advancedMenu.addMenuItem(SPKMenuItem("EDID Passthrough", advancedEDIDPassthrough)); // have global setting of passthrough that overrides resolution sets and is saved with conform processor
-    //advancedMenu.addMenuItem(SPKMenuItem("EDID Internal", advancedEDIDInternal));
     if (settingsAreCustom) advancedMenu.addMenuItem(SPKMenuItem("Revert Controller", advancedLoadDefaults));
     advancedMenu.addMenuItem(SPKMenuItem("Start Self-Test", advancedSelfTest));
     advancedMenu.addMenuItem(SPKMenuItem("Back to Main Menu", &mainMenu));
@@ -696,10 +708,8 @@ int main()
     
     // If we do not have two solid sources, act on this as we rely on the window having a source for crossfade behaviour
     // Once we've had two solid inputs, don't check any more as we're ok as the unit is set to hold on last frame.
-    // This will update kTVOneStatusLine if necessary
-    bool ok = handleTVOneSources();
-
-    screen.sendBuffer();
+    // This is set to update kTVOneStatusLine and sendBuffer regardless
+    bool ok = handleTVOneSources(true);
 
     //// CONTROLS TEST
 
@@ -757,13 +767,19 @@ int main()
                     if (fadeCurve > 1.0f) fadeCurve = 1.0f;
                     if (fadeCurve < 0.0f) fadeCurve = 0.0f;
                     
-                    mixMode = (fadeCurve > 0.0f) ? mixAdditive: mixBlend;
+                    int newMixMode = (fadeCurve > 0.0f) ? mixAdditive: mixBlend;
+
+                    if (newMixMode != mixMode)
+                    {
+                        mixMode = newMixMode;
+                        actionMixMode();
+                    }
 
                     screen.clearBufferRow(kMenuLine2);
                     screen.textToBuffer("Blend [ ----- ] Add", kMenuLine2);
                     screen.characterToBuffer('X', 38 + fadeCurve*20.0f, kMenuLine2);
                     
-                    if (debug) debug->printf("Fade curve changed by %i to %f", menuChange, fadeCurve);
+                    if (debug) debug->printf("Fade curve changed by %i to %f \r\n", menuChange, fadeCurve);
                 }
             }
             else
@@ -788,8 +804,14 @@ int main()
             // Are we changing menus?
             if (selectedMenu->selectedItem().type == SPKMenuItem::changesToMenu) 
             {
-                // point selected menu to the new menu
+                // If we're exiting the menu, we should set its selected index back to the menu's beginning...
+                SPKMenu* menuToReset = selectedMenu->selectedItem().payload.menu == &mainMenu? selectedMenu : NULL;
+             
+                // point selected menu pointer to the new menu pointer
                 selectedMenu = selectedMenu->selectedItem().payload.menu;
+                
+                // ...doing this, of course, after we've used the value
+                if (menuToReset) *menuToReset = 0;
                 
                 // update OLED lines 1&2
                 screen.clearBufferRow(kMenuLine1);
@@ -826,8 +848,11 @@ int main()
                 bool ok = true;
                 
                 ok =       tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustOutputsOutputResolution, resolutionMenu.selectedItem().payload.command[0]);
-                ok = ok && tvOne.command(kTV1SourceRGB1, kTV1WindowIDA, kTV1FunctionAdjustSourceEDID, resolutionMenu.selectedItem().payload.command[1]);
-                ok = ok && tvOne.command(kTV1SourceRGB2, kTV1WindowIDA, kTV1FunctionAdjustSourceEDID, resolutionMenu.selectedItem().payload.command[1]);
+                
+                int32_t slot = tvOneEDIDPassthrough ? EDIDPassthroughSlot : resolutionMenu.selectedItem().payload.command[1];
+                
+                ok = ok && tvOne.command(kTV1SourceRGB1, kTV1WindowIDA, kTV1FunctionAdjustSourceEDID, slot);
+                ok = ok && tvOne.command(kTV1SourceRGB2, kTV1WindowIDA, kTV1FunctionAdjustSourceEDID, slot);
                 
                 string sentOK;
                 if (ok) sentOK = "Sent: ";
@@ -939,7 +964,7 @@ int main()
             {
                 if (advancedMenu.selectedItem().payload.command[0] == advancedHDCPOff)
                 {
-                    bool ok = false;
+                    bool ok;
                     
                     ok = tvOne.setHDCPOn(false);
                     
@@ -950,7 +975,7 @@ int main()
                 }
                 else if (advancedMenu.selectedItem().payload.command[0] == advancedHDCPOn)
                 {
-                    bool ok = false;
+                    bool ok;
                     
                     ok = tvOne.setHDCPOn(true);
                     
@@ -959,9 +984,41 @@ int main()
                     screen.clearBufferRow(kTVOneStatusLine);
                     screen.textToBuffer(sendOK, kTVOneStatusLine);
                 }
+                else if (advancedMenu.selectedItem().payload.command[0] == advancedEDIDPassthrough)
+                {
+                    tvOneEDIDPassthrough = true;
+                    
+                    bool ok = true;
+                    
+                    int32_t slot = tvOneEDIDPassthrough ? EDIDPassthroughSlot : resolutionMenu.selectedItem().payload.command[1];
+                
+                    ok = ok && tvOne.command(kTV1SourceRGB1, kTV1WindowIDA, kTV1FunctionAdjustSourceEDID, slot);
+                    ok = ok && tvOne.command(kTV1SourceRGB2, kTV1WindowIDA, kTV1FunctionAdjustSourceEDID, slot);
+                    
+                    std::string sendOK = ok ? "Sent: EDID. Next:conform?" : "Send Error: EDID";
+                    
+                    screen.clearBufferRow(kTVOneStatusLine);
+                    screen.textToBuffer(sendOK, kTVOneStatusLine);
+                }
+                else if (advancedMenu.selectedItem().payload.command[0] == advancedEDIDInternal)
+                {
+                    tvOneEDIDPassthrough = false;
+                    
+                    bool ok = true;
+                    
+                    int32_t slot = tvOneEDIDPassthrough ? EDIDPassthroughSlot : resolutionMenu.selectedItem().payload.command[1];
+                
+                    ok = ok && tvOne.command(kTV1SourceRGB1, kTV1WindowIDA, kTV1FunctionAdjustSourceEDID, slot);
+                    ok = ok && tvOne.command(kTV1SourceRGB2, kTV1WindowIDA, kTV1FunctionAdjustSourceEDID, slot);
+                    
+                    std::string sendOK = ok ? "Sent: EDID. Next:conform?" : "Send Error: EDID";
+                    
+                    screen.clearBufferRow(kTVOneStatusLine);
+                    screen.textToBuffer(sendOK, kTVOneStatusLine);
+                }
                 else if (advancedMenu.selectedItem().payload.command[0] == advancedTestSources)
                 {
-                    handleTVOneSources();
+                    handleTVOneSources(true);
                 }
                 else if (advancedMenu.selectedItem().payload.command[0] == advancedConformProcessor)
                 {

@@ -9,6 +9,8 @@ extern "C"
 
 class SPKSettings {
 public:
+    enum {minY = 0, maxY, minU, maxU, minV, maxV};
+
     SPKSettings()
     {
         loadDefaults();
@@ -20,15 +22,25 @@ public:
         
         keyerParamNames.clear();
         keyerParamSets.clear();
+        vector<int> paramSet(6);
         
-        // Parameter Set: minY, maxY, minU, maxU, minV, maxV
-        int paramSet1[6] = {0, 18, 128, 129, 128, 129};
+        paramSet[minY] = 0;
+        paramSet[maxY] = 18;
+        paramSet[minU] = 128;
+        paramSet[maxU] = 129;
+        paramSet[minV] = 128;
+        paramSet[maxV] = 129;
+        keyerParamSets.push_back(paramSet);
         keyerParamNames.push_back("Lumakey");
-        keyerParamSets.push_back(paramSet1);
         
-        int paramSet2[6] = {30, 35, 237, 242, 114, 121};
+        paramSet[minY] = 30;
+        paramSet[maxY] = 35;
+        paramSet[minU] = 237;
+        paramSet[maxU] = 242;
+        paramSet[minV] = 114;
+        paramSet[maxV] = 121;
+        keyerParamSets.push_back(paramSet);
         keyerParamNames.push_back("Chromakey - Blue");
-        keyerParamSets.push_back(paramSet2);
         
         //// RESOLUTIONS
         
@@ -83,7 +95,7 @@ public:
         return keyerParamNames[index];
     }
      
-    int*        keyerParamSet(int index)
+    vector<int>        keyerParamSet(int index)
     {
         return keyerParamSets[index];
     }
@@ -138,8 +150,8 @@ public:
             // Loop through [Key1,2,...,99] sections
             while(keyParamReadOK)
             {
-                int     paramSet[6];
-                char*   paramName;
+                vector<int> paramSet(6);
+                char*       paramName;
                 
                 char key[stringLength];
         
@@ -148,28 +160,28 @@ public:
                 keyParamReadOK = keyParamReadOK && strcmp(paramName, failString);
                        
                 snprintf(key, stringLength, "Key%i:MinY", counter);
-                paramSet[0] = iniparser_getint(settings, key, failInt);
-                keyParamReadOK = keyParamReadOK && (paramSet[0] != failInt);
+                paramSet[minY] = iniparser_getint(settings, key, failInt);
+                keyParamReadOK = keyParamReadOK && (paramSet[minY] != failInt);
 
                 snprintf(key, stringLength, "Key%i:MaxY", counter);
-                paramSet[1] = iniparser_getint(settings, key, failInt);
-                keyParamReadOK = keyParamReadOK && (paramSet[1] != failInt);
+                paramSet[maxY] = iniparser_getint(settings, key, failInt);
+                keyParamReadOK = keyParamReadOK && (paramSet[maxY] != failInt);
                 
                 snprintf(key, stringLength, "Key%i:MinU", counter);
-                paramSet[2] = iniparser_getint(settings, key, failInt);
-                keyParamReadOK = keyParamReadOK && (paramSet[2] != failInt);
+                paramSet[minU] = iniparser_getint(settings, key, failInt);
+                keyParamReadOK = keyParamReadOK && (paramSet[minU] != failInt);
                 
                 snprintf(key, stringLength, "Key%i:MaxU", counter);
-                paramSet[3] = iniparser_getint(settings, key, failInt);
-                keyParamReadOK = keyParamReadOK && (paramSet[3] != failInt);
+                paramSet[maxU] = iniparser_getint(settings, key, failInt);
+                keyParamReadOK = keyParamReadOK && (paramSet[maxU] != failInt);
                 
                 snprintf(key, stringLength, "Key%i:MinV", counter);
-                paramSet[4] = iniparser_getint(settings, key, failInt);
-                keyParamReadOK = keyParamReadOK && (paramSet[4] != failInt);
+                paramSet[minV] = iniparser_getint(settings, key, failInt);
+                keyParamReadOK = keyParamReadOK && (paramSet[minV] != failInt);
                 
                 snprintf(key, stringLength, "Key%i:MaxV", counter);
-                paramSet[5] = iniparser_getint(settings, key, failInt);
-                keyParamReadOK = keyParamReadOK && (paramSet[5] != failInt);
+                paramSet[maxV] = iniparser_getint(settings, key, failInt);
+                keyParamReadOK = keyParamReadOK && (paramSet[maxV] != failInt);
                 
                 // If all parameters have been read successfully
                 if (keyParamReadOK)
@@ -188,7 +200,7 @@ public:
                     keyerParamSets.push_back(paramSet);
                     
                     // We've successfully read a keyer param set, so should return true;
-                    success = true;
+                    success = true;  
                 }
                 
                 counter++;
@@ -261,9 +273,9 @@ public:
     
 protected:
     LocalFileSystem *local;
-    vector<int*>    keyerParamSets;
-    vector<string>  keyerParamNames;
-    vector<string>  resolutionNames;
-    vector<int32_t> resolutionIndexes;
-    vector<int32_t> resolutionEDIDIndexes;
+    vector< vector<int> >   keyerParamSets;
+    vector<string>          keyerParamNames;
+    vector<string>          resolutionNames;
+    vector<int32_t>         resolutionIndexes;
+    vector<int32_t>         resolutionEDIDIndexes;
 };

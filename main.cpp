@@ -175,7 +175,8 @@ enum { rj45Ethernet = 0, rj45DMX = 1}; // These values from circuit
 int rj45Mode = -1;
 EthernetNetIf *ethernet = NULL;
 OSCClass *osc = NULL;
-OSCMessage recMessage;
+OSCMessage sendMessage;
+OSCMessage receiveMessage;
 DmxArtNet *artNet = NULL;
 DMX *dmx = NULL;
 
@@ -204,29 +205,29 @@ bool tvOneHDCPOn = false;
 bool tvOneEDIDPassthrough = true;
 const int32_t EDIDPassthroughSlot = 7;
 
-void processOSC(float &xFade, float &fadeUp) {
+void processOSCIn(float &xFade, float &fadeUp) {
     string statusMessage;
     
-    if (!strcmp( recMessage.getTopAddress() , "dvimxr" )) 
+    if (!strcmp( receiveMessage.getTopAddress() , "dvimxr" )) 
     {
         statusMessage = "OSC: /dvimxr";
-        if (!strcmp( recMessage.getSubAddress() , "xFade" )) 
+        if (!strcmp( receiveMessage.getSubAddress() , "xFade" )) 
         {
-            if (recMessage.getArgNum() == 1)
-                if (recMessage.getTypeTag(0) == 'f')
+            if (receiveMessage.getArgNum() == 1)
+                if (receiveMessage.getTypeTag(0) == 'f')
                 {
-                    xFade = recMessage.getArgFloat(0);
+                    xFade = receiveMessage.getArgFloat(0);
                     char buffer[15];
                     snprintf(buffer, kStringBufferLength, "/xFade %1.2f", xFade);
                     statusMessage += buffer;
                 }
         }
-        else if (!strcmp( recMessage.getSubAddress() , "fadeUp" ))
+        else if (!strcmp( receiveMessage.getSubAddress() , "fadeUp" ))
         {
-            if (recMessage.getArgNum() == 1)
-                if (recMessage.getTypeTag(0) == 'f')
+            if (receiveMessage.getArgNum() == 1)
+                if (receiveMessage.getTypeTag(0) == 'f')
                 {
-                    fadeUp = recMessage.getArgFloat(0);
+                    fadeUp = receiveMessage.getArgFloat(0);
                     char buffer[15];
                     snprintf(buffer, kStringBufferLength, "/fadeUp %1.2f", fadeUp);
                     statusMessage += buffer;
@@ -234,30 +235,63 @@ void processOSC(float &xFade, float &fadeUp) {
         }
         else 
         {
-            statusMessage += recMessage.getSubAddress();
+            statusMessage += receiveMessage.getSubAddress();
             statusMessage += " - Ignoring";
         }
     }
     else
     {
         statusMessage = "OSC: ";
-        statusMessage += recMessage.getTopAddress();
+        statusMessage += receiveMessage.getTopAddress();
         statusMessage += " - Ignoring";
     }
     
     screen.clearBufferRow(kCommsStatusLine);
     screen.textToBuffer(statusMessage, kCommsStatusLine);
-    screen.sendBuffer();
+
     if (debug) debug->printf("%s \r\n", statusMessage.c_str());
     
 }
 
-void processArtNet(float &xFade, float &fadeUp) 
+void processOSCOut(float &xFade, float &fadeUp) 
+{
+    char statusMessageBuffer[kStringBufferLength];
+
+    sendMessage.setAddress("dvimxr", "xFadeFadeUp");
+    sendMessage.setArgs("ff", &xFade, &fadeUp);
+    osc->sendOsc(&sendMessage);
+    
+    screen.clearBufferRow(kCommsStatusLine);
+    snprintf(statusMessageBuffer, kStringBufferLength, "OSC Out: xF %.2f fUp %.2f", xFade, fadeUp);
+    screen.textToBuffer(statusMessageBuffer, kCommsStatusLine);
+
+    if (debug) debug->printf(statusMessageBuffer);
+}
+
+void processArtNetIn(float &xFade, float &fadeUp) 
 {
     screen.clearBufferRow(kCommsStatusLine);
     screen.textToBuffer("ArtNet activity", kCommsStatusLine);
-    screen.sendBuffer();
+
     if (debug) debug->printf("ArtNet activity");
+}
+
+void processArtNetOut(float &xFade, float &fadeUp) 
+{
+    char statusMessageBuffer[kStringBufferLength];
+
+    int xFadeDMX = xFade*255;
+    int fadeUpDMX = fadeUp*255;
+    
+    // Universe 0, Channel 0 = xFade, Channel 1 = fadeUp
+    char dmxData[2] = {xFadeDMX, fadeUpDMX};
+    artNet->Send_ArtDmx(0, 0, dmxData, 2);
+    
+    screen.clearBufferRow(kCommsStatusLine);
+    snprintf(statusMessageBuffer, kStringBufferLength, "A'Net Out: xF%3i fUp %3i", xFadeDMX, fadeUpDMX);
+    screen.textToBuffer(statusMessageBuffer, kCommsStatusLine);
+
+    if (debug) debug->printf(statusMessageBuffer);
 }
 
 void processDMXIn(float &xFade, float &fadeUp) 
@@ -273,7 +307,7 @@ void processDMXIn(float &xFade, float &fadeUp)
     screen.clearBufferRow(kCommsStatusLine);
     snprintf(statusMessageBuffer, kStringBufferLength, "DMX In: xF %3i fUp %3i", xFadeDMX, fadeUpDMX);
     screen.textToBuffer(statusMessageBuffer, kCommsStatusLine);
-    screen.sendBuffer();
+
     if (debug) debug->printf(statusMessageBuffer);
 }
 
@@ -290,7 +324,7 @@ void processDMXOut(float &xFade, float &fadeUp)
     screen.clearBufferRow(kCommsStatusLine);
     snprintf(statusMessageBuffer, kStringBufferLength, "DMX Out: xF %3i fUp %3i", xFadeDMX, fadeUpDMX);
     screen.textToBuffer(statusMessageBuffer, kCommsStatusLine);
-    screen.sendBuffer();
+
     if (debug) debug->printf(statusMessageBuffer);
 }
 
@@ -341,7 +375,6 @@ bool handleTVOneSources(bool updateScreenOverride = false)
     {
         screen.clearBufferRow(kTVOneStatusLine);
         screen.textToBuffer(tvOneDetectString, kTVOneStatusLine); 
-        screen.sendBuffer();
     }
     
     tvOneRGB1Stable = RGB1;
@@ -504,6 +537,7 @@ void setCommsMenuItems()
         commsMenu.addMenuItem(SPKMenuItem("OSC", commsOSC));
         commsMenu.addMenuItem(SPKMenuItem("ArtNet", commsArtNet));
         commsMenu.addMenuItem(SPKMenuItem("Back to Main Menu", &mainMenu));
+        commsMenu = 0;
     }
     else if (rj45Mode == rj45DMX) 
     {
@@ -513,6 +547,7 @@ void setCommsMenuItems()
         commsMenu.addMenuItem(SPKMenuItem("DMX In", commsDMXIn));
         commsMenu.addMenuItem(SPKMenuItem("DMX Out", commsDMXOut));
         commsMenu.addMenuItem(SPKMenuItem("Back to Main Menu", &mainMenu));
+        commsMenu = 0;
     }
 }
 
@@ -604,9 +639,12 @@ int main()
     
     // If we do not have two solid sources, act on this as we rely on the window having a source for crossfade behaviour
     // Once we've had two solid inputs, don't check any more as we're ok as the unit is set to hold on last frame.
-    // This is set to update kTVOneStatusLine and sendBuffer regardless
+    // This is set to update kTVOneStatusLine regardless
     bool ok = handleTVOneSources(true);
-
+    
+    // Update display before starting mixer loop
+    screen.sendBuffer();
+    
     //// CONTROLS TEST
 
     while (0) {
@@ -618,7 +656,7 @@ int main()
     while (1) 
     {
         //// Task background things
-        if (ethernet && rj45Mode == rj45Ethernet)
+        if ((osc || artNet) && rj45Mode == rj45Ethernet)
         {
             Net::poll();
         }
@@ -641,6 +679,8 @@ int main()
             // refresh display
             if (selectedMenu == &commsMenu) 
             {
+                screen.clearBufferRow(kMenuLine1);
+                screen.clearBufferRow(kMenuLine2);
                 screen.textToBuffer(selectedMenu->title, kMenuLine1);
                 screen.textToBuffer(selectedMenu->selectedString(), kMenuLine2);
             }
@@ -773,7 +813,15 @@ int main()
                 commsMode = commsNone;
                 if (osc)        {delete osc; osc = NULL;}  
                 if (ethernet)   {delete ethernet; ethernet = NULL;}
-                if (artNet)     {delete artNet; artNet = NULL;}
+                if (artNet)     
+                {
+                    artNet->ArtPollReply.NumPorts = 0; 
+                    strcpy(artNet->ArtPollReply.NodeReport, "Shutdown");
+                    artNet->SendArtPollReply();
+                    artNet->Done(); 
+                    delete artNet; 
+                    artNet = NULL;
+                }
                 if (dmx)        {delete dmx; dmx = NULL;}
                 
                 // Ensure we can't change to comms modes the hardware isn't switched to
@@ -808,7 +856,7 @@ int main()
                     }
 
                     osc = new OSCClass();
-                    osc->setReceiveMessage(&recMessage);
+                    osc->setReceiveMessage(&receiveMessage);
                     osc->begin(kOSCMbedPort);
                     
                     snprintf(commsStatusBuffer, kStringBufferLength, "Listening on %i", kOSCMbedPort);
@@ -825,9 +873,10 @@ int main()
                 
                     artNet->InitArtPollReplyDefaults();
                 
-                    artNet->ArtPollReply.PortType[0] = 128; // output
-                    artNet->ArtPollReply.PortType[2] = 64; // input
-                    artNet->ArtPollReply.GoodInput[2] = 4;
+                    artNet->ArtPollReply.PortType[0] = 128; // Bit 7 = Set is this channel can output data from the Art-Net Network.
+                    artNet->ArtPollReply.GoodOutput[0] = 128; // Bit 7 = Set – Data is being transmitted.
+                    artNet->ArtPollReply.PortType[2] = 64; // Bit 6 = Set if this channel can input onto the Art-NetNetwork.
+                    artNet->ArtPollReply.GoodInput[2] = 128; // Bit 7 = Set – Data received.
                 
                     artNet->Init();
                     artNet->SendArtPollReply(); // announce to art-net nodes
@@ -953,9 +1002,6 @@ int main()
             }
         }
         
-        // Send any updates to the display
-        screen.sendBuffer();
-        
         
         //// MIX MIX MIX MIX MIX MIX MIX MIX MIX MIX MIX MIXMIX MIX MIXMIX MIX MIX MIX MIX MIXMIX MIX MIX
 
@@ -1006,19 +1052,19 @@ int main()
 
         fadeUp = 1.0 - fadeCalc(fadeUpAINCached, fadeUpTolerance);
 
-        //// TASK: Process Network Comms
+        //// TASK: Process Network Comms In, ie. modify TVOne state
         if (commsMode == commsOSC)
         {
             if (osc->newMessage) 
             {
                 osc->newMessage = false; // fixme!
-                processOSC(xFade, fadeUp);
+                processOSCIn(xFade, fadeUp);
             }
         }
 
         if (commsMode == commsArtNet)
         {
-            if (artNet->Work()) processArtNet(xFade, fadeUp);
+            if (artNet->Work()) processArtNetIn(xFade, fadeUp);
         }
 
         if (commsMode == commsDMXIn)
@@ -1117,11 +1163,31 @@ int main()
             debug->printf("\r\n"); 
         }
         
+        
+        //// TASK: Process Network Comms Out, ie. send out any fade updates
+        if (commsMode == commsOSC && updateFade)
+        {
+            processOSCOut(xFade, fadeUp);
+        }
+
+        if (commsMode == commsArtNet && updateFade)
+        {
+            processArtNetOut(xFade, fadeUp);
+        }
+
+        if (commsMode == commsDMXOut && updateFade)
+        {
+            processDMXOut(xFade, fadeUp);
+        }
+        
         // If we're not actively mixing, we can do any housekeeping...
         if (!updateFade)
         {
             // We should check up on any source flagged unstable 
             if (!tvOneRGB1Stable || !tvOneRGB2Stable) handleTVOneSources();
         }
+        
+        // Send any updates to the display
+        screen.sendBuffer();
     }
 }

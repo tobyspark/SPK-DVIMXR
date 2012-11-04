@@ -116,8 +116,8 @@
 //// DEBUG
 
 // Comment out one or the other...
-Serial *debug = new Serial(USBTX, USBRX); // For debugging via USB serial
-//Serial *debug = NULL; // For release (no debugging)
+//Serial *debug = new Serial(USBTX, USBRX); // For debugging via USB serial
+Serial *debug = NULL; // For release (no debugging)
 
 //// SOFT RESET
 
@@ -168,7 +168,7 @@ enum { commsNone, commsOSC, commsArtNet, commsDMXIn, commsDMXOut};
 int commsMode = commsNone;
 
 SPKMenu advancedMenu;
-enum { advancedHDCPOn, advancedHDCPOff, advancedEDIDPassthrough, advancedEDIDInternal, advancedTestSources, advancedConformProcessor, advancedLoadDefaults, advancedSelfTest, advancedSetResolutions };
+enum { advancedHDCPOn, advancedHDCPOff, advancedEDIDPassthrough, advancedEDIDInternal, advancedTestSources, advancedConformProcessor, advancedLoadDefaults, advancedSetResolutions };
 
 // RJ45 Comms
 enum { rj45Ethernet = 0, rj45DMX = 1}; // These values from circuit
@@ -473,109 +473,6 @@ bool conformProcessor()
     return ok;
 }
 
-void selfTest()
-{
-    /* SELF TEST - Pixels
-     * Clicking &#65533;self-test&#65533; menu will display a solid lit screen. Check all pixels lit. 
-     * Verified: Display
-     */
-    
-    screen.imageToBuffer(spkDisplayAllPixelsOn);
-    screen.sendBuffer();
-    
-    while(!menuEnc.hasPressed())
-    {
-        // do nothing, wait for press
-    }
-    
-    /* SELF TEST - Mixing Controls
-     * Clicking again will prompt to check crossfader, fade to black and tap buttons. Check movement of physical controls against 0.0-1.0 values on- screen. 
-     * Verified: Mixing controls.
-     */
-     
-    screen.clearBuffer();
-    screen.textToBuffer("Self test - Mixing Controls", 0);
-
-    while(!menuEnc.hasPressed())
-    {
-        char xFadeReadOut[kStringBufferLength]; 
-        char fadeToBlackReadOut[kStringBufferLength];
-        char tapsReadOut[kStringBufferLength];
-        
-        snprintf(xFadeReadOut, kStringBufferLength, "Crossfade: %1.3f", xFadeAIN.read());
-        snprintf(fadeToBlackReadOut, kStringBufferLength, "Fade to black: %1.3f", fadeUpAIN.read());
-        snprintf(tapsReadOut, kStringBufferLength, "Tap left: %i, right: %i", tapLeftDIN.read(), tapRightDIN.read());
-        
-        screen.clearBufferRow(1);
-        screen.clearBufferRow(2);
-        screen.clearBufferRow(3);
-        
-        screen.textToBuffer(xFadeReadOut, 1);
-        screen.textToBuffer(fadeToBlackReadOut, 2);
-        screen.textToBuffer(tapsReadOut, 3);
-        screen.sendBuffer();
-    }
-    
-    /* SELF TEST - RS232
-     * Click the controller menu control. Should see &#65533;RS232 test&#65533; prompt and test message. Ensure PC is displaying the test message. 
-     * Verified: RS232 connection.
-     */
-     
-    screen.clearBuffer();
-    screen.textToBuffer("Self test - RS232", 0);
-    screen.sendBuffer();
-    
-    while(!menuEnc.hasPressed())
-    {
-        screen.textToBuffer("TODO!", 1);
-        screen.sendBuffer();
-    }
-    
-    /* SELF TEST - DMX
-     * Click the controller menu control. Should see &#65533;DMX test&#65533; prompt and test message. Ensure PC is displaying the test message. 
-     * Verified: RS485 connection and DMX library.
-     */
-     
-    screen.clearBuffer();
-    screen.textToBuffer("Self test - DMX", 0);
-    screen.sendBuffer();
-    
-    while(!menuEnc.hasPressed())
-    {
-        screen.textToBuffer("TODO!", 1);
-        screen.sendBuffer();
-    }
-    
-    /* SELF TEST - OSC
-     * Click the controller menu control. Should see &#65533;OSC test&#65533; prompt and test message. Ensure PC is displaying the test message. 
-     * Verified: Ethernet connection and OSC library.
-     */
-     
-    screen.clearBuffer();
-    screen.textToBuffer("Self test - DMX", 0);
-    screen.sendBuffer();
-    
-    while(!menuEnc.hasPressed())
-    {
-        screen.textToBuffer("TODO!", 1);
-        screen.sendBuffer();
-    }
-
-    /* SELF TEST - Exit!
-     * To do this, we could just do nothing but we'd need to recreate screen and comms as they were. 
-     * Instead, lets just restart the mbed
-     */
-     
-    screen.clearBuffer();
-    screen.textToBuffer("Self test complete", 0);
-    screen.textToBuffer("Press to restart controller", 1);
-    screen.sendBuffer();
-    
-    while(!menuEnc.hasPressed()) {}                    
-    
-    mbed_reset();
-}
-
 void setResolutionMenuItems()
 {
     resolutionMenu.clearMenuItems();
@@ -671,7 +568,6 @@ int main()
     advancedMenu.addMenuItem(SPKMenuItem("Test Processor Sources", advancedTestSources));
     advancedMenu.addMenuItem(SPKMenuItem("Conform Processor", advancedConformProcessor));
     if (settingsAreCustom) advancedMenu.addMenuItem(SPKMenuItem("Revert Controller", advancedLoadDefaults));
-    advancedMenu.addMenuItem(SPKMenuItem("Start Self-Test", advancedSelfTest));
     advancedMenu.addMenuItem(SPKMenuItem("Back to Main Menu", &mainMenu));
     
     mainMenu.title = "Main Menu";
@@ -1041,10 +937,6 @@ int main()
                     
                     screen.clearBufferRow(kTVOneStatusLine);
                     screen.textToBuffer("Controller reverted", kTVOneStatusLine);
-                }
-                else if (advancedMenu.selectedItem().payload.command[0] == advancedSelfTest)
-                {
-                    selfTest();
                 }
                 else if (advancedMenu.selectedItem().payload.command[0] == advancedSetResolutions)
                 {

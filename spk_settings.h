@@ -50,23 +50,23 @@ public:
         
         resolutionNames.push_back(kTV1ResolutionDescriptionVGA);
         resolutionIndexes.push_back(kTV1ResolutionVGA);
-        resolutionEDIDIndexes.push_back(5);
+        resolutionEDIDIndexes.push_back(6);
     
         resolutionNames.push_back(kTV1ResolutionDescriptionSVGA);
         resolutionIndexes.push_back(kTV1ResolutionSVGA);
-        resolutionEDIDIndexes.push_back(5);
+        resolutionEDIDIndexes.push_back(6);
         
         resolutionNames.push_back(kTV1ResolutionDescriptionXGAp60);
         resolutionIndexes.push_back(kTV1ResolutionXGAp60);
-        resolutionEDIDIndexes.push_back(5);
+        resolutionEDIDIndexes.push_back(6);
         
         resolutionNames.push_back(kTV1ResolutionDescriptionWSXGAPLUSp60);
         resolutionIndexes.push_back(kTV1ResolutionWSXGAPLUSp60);
-        resolutionEDIDIndexes.push_back(5);
+        resolutionEDIDIndexes.push_back(6);
         
         resolutionNames.push_back(kTV1ResolutionDescriptionWUXGAp60);
         resolutionIndexes.push_back(kTV1ResolutionWUXGAp60);
-        resolutionEDIDIndexes.push_back(5);
+        resolutionEDIDIndexes.push_back(6);
         
         resolutionNames.push_back(kTV1ResolutionDescription720p60);
         resolutionIndexes.push_back(kTV1Resolution720p60);
@@ -78,15 +78,15 @@ public:
         
         resolutionNames.push_back(kTV1ResolutionDescriptionDualHeadSVGAp60);
         resolutionIndexes.push_back(kTV1ResolutionDualHeadSVGAp60);
-        resolutionEDIDIndexes.push_back(5);
+        resolutionEDIDIndexes.push_back(4);
         
         resolutionNames.push_back(kTV1ResolutionDescriptionDualHeadXGAp60);
         resolutionIndexes.push_back(kTV1ResolutionDualHeadXGAp60);
-        resolutionEDIDIndexes.push_back(5);
+        resolutionEDIDIndexes.push_back(4);
         
         resolutionNames.push_back(kTV1ResolutionDescriptionTripleHeadVGAp60);
         resolutionIndexes.push_back(kTV1ResolutionTripleHeadVGAp60);
-        resolutionEDIDIndexes.push_back(5);   
+        resolutionEDIDIndexes.push_back(4);   
     }
     
     string keyerParamName (int index)

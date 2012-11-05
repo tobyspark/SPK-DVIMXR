@@ -116,8 +116,8 @@
 //// DEBUG
 
 // Comment out one or the other...
-//Serial *debug = new Serial(USBTX, USBRX); // For debugging via USB serial
-Serial *debug = NULL; // For release (no debugging)
+Serial *debug = new Serial(USBTX, USBRX); // For debugging via USB serial
+//Serial *debug = NULL; // For release (no debugging)
 
 //// SOFT RESET
 
@@ -197,13 +197,14 @@ bool tapLeftWasFirstPressed = false;
 int keyerParamsSet = -1; // last keyParams index uploaded to unit 
 
 // TVOne input sources stable flag
-bool tvOneRGB1Stable = true; // init true as this is conformed state of mixer, ie. RGB1 not SIS1
-bool tvOneRGB2Stable = true;
+bool tvOneRGB1Stable = false;
+bool tvOneRGB2Stable = false;
 
 // TVOne behaviour flags
 bool tvOneHDCPOn = false;
-bool tvOneEDIDPassthrough = true;
+bool tvOneEDIDPassthrough = false;
 const int32_t EDIDPassthroughSlot = 7;
+
 
 void processOSCIn(float &xFade, float &fadeUp) {
     string statusMessage;
@@ -338,17 +339,25 @@ inline float fadeCalc (const float AIN, const float tolerance)
     return pos;
 }
 
-bool handleTVOneSources(bool updateScreenOverride = false)
+bool handleTVOneSources()
 {
     bool ok = true;
 
     int32_t payload = 0;
     
     ok = ok && tvOne.readCommand(kTV1SourceRGB1, kTV1WindowIDA, kTV1FunctionAdjustSourceSourceStable, payload);
-    bool RGB1 = (payload == 1);
+    bool RGB1 = (payload == 1);    
     
     ok = ok && tvOne.readCommand(kTV1SourceRGB2, kTV1WindowIDA, kTV1FunctionAdjustSourceSourceStable, payload);
     bool RGB2 = (payload == 1);
+   
+    ok = ok && tvOne.readCommand(0, kTV1WindowIDA, kTV1FunctionAdjustWindowsWindowSource, payload);
+    int sourceA = payload;
+   
+    ok = ok && tvOne.readCommand(0, kTV1WindowIDB, kTV1FunctionAdjustWindowsWindowSource, payload);
+    int sourceB = payload;
+   
+    if (debug) debug->printf("HandleTVOneSources: RGB1: %i, RGB2: %i, sourceA: %#x, sourceB: %#i \r\n", RGB1, RGB2, sourceA, sourceB);
    
     string tvOneDetectString;
     if (!ok)
@@ -366,19 +375,24 @@ bool handleTVOneSources(bool updateScreenOverride = false)
         tvOneDetectString = "TVOne: OK";
     }
     
-    if (RGB1 && !tvOneRGB1Stable) tvOne.command(0, kTV1WindowIDB, kTV1FunctionAdjustWindowsWindowSource, kTV1SourceRGB1);
-    if (RGB2 && !tvOneRGB2Stable) tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustWindowsWindowSource, kTV1SourceRGB2);
-    if (!RGB1 && tvOneRGB1Stable) tvOne.command(0, kTV1WindowIDB, kTV1FunctionAdjustWindowsWindowSource, kTV1SourceSIS1);
-    if (!RGB2 && tvOneRGB2Stable) tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustWindowsWindowSource, kTV1SourceSIS2);
-     
-    if (updateScreenOverride || (RGB1 != tvOneRGB1Stable || RGB2 != tvOneRGB2Stable))
-    {
-        screen.clearBufferRow(kTVOneStatusLine);
-        screen.textToBuffer(tvOneDetectString, kTVOneStatusLine); 
-    }
+    screen.clearBufferRow(kTVOneStatusLine);
+    screen.textToBuffer(tvOneDetectString, kTVOneStatusLine);
     
-    tvOneRGB1Stable = RGB1;
-    tvOneRGB2Stable = RGB2;
+    // Assign appropriate source depending on whether DVI input is good
+    // If that assign command completes ok, and the DVI input is good, finally flag the unit has had a live source
+    // Note any further losses on this input will be handled by the unit holding the last frame, so we don't need to switch back to SIS.
+    if (ok && !tvOneRGB1Stable)
+    {
+        if (RGB1 && (sourceB != kTV1SourceRGB1)) ok = ok && tvOne.command(0, kTV1WindowIDB, kTV1FunctionAdjustWindowsWindowSource, kTV1SourceRGB1);
+        if (!RGB1 && (sourceB != kTV1SourceSIS2)) ok = ok && tvOne.command(0, kTV1WindowIDB, kTV1FunctionAdjustWindowsWindowSource, kTV1SourceSIS2); // Wierd: Can't set to SIS1 sometimes.
+        if (ok && RGB1) tvOneRGB1Stable = true;
+    }
+    if (ok && !tvOneRGB2Stable)
+    {
+        if (RGB2 && (sourceA != kTV1SourceRGB2)) ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustWindowsWindowSource, kTV1SourceRGB2);
+        if (!RGB2 && (sourceA != kTV1SourceSIS2)) ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustWindowsWindowSource, kTV1SourceSIS2);
+        if (ok && RGB2) tvOneRGB2Stable = true;
+    } 
         
     return ok;       
 }   
@@ -499,6 +513,22 @@ bool conformProcessor()
     ok = ok && tvOne.command(kTV1SourceRGB2, kTV1WindowIDA, kTV1FunctionAdjustSourceEDID, slot);
     ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustWindowsMaxFadeLevel, 100);
     ok = ok && tvOne.command(0, kTV1WindowIDB, kTV1FunctionAdjustWindowsMaxFadeLevel, 100);
+    
+    // Upload Matrox EDID to mem4 (ie. index 3). Use this EDID slot when setting Matrox resolutions.
+    char edidData[256];
+    int i;
+    {
+        LocalFileSystem local("local");
+        FILE *file = fopen("/local/matroxe.did", "r"); // 8.3, avoid .bin as mbed executable
+        for ( i=0; i<256; i++)
+        {
+            int edidByte = fgetc(file);
+            if (edidByte == EOF) break;
+            else edidData[i] = edidByte;
+        }
+        fclose(file);
+    }
+    ok = ok && tvOne.uploadEDID(edidData, i, 3);
     
     // Save current state for power on
     ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionPowerOnPresetStore, 1);
@@ -635,12 +665,11 @@ int main()
     screen.horizLineToBuffer(kMenuLine2*pixInPage + pixInPage);
     screen.horizLineToBuffer(kCommsStatusLine*pixInPage - 1);
     screen.clearBufferRow(kTVOneStatusLine);
-    screen.textToBuffer("TVOne: OK", kTVOneStatusLine); // handleTVOneSources may update this
+    screen.textToBuffer("TVOne: OK", kTVOneStatusLine); // handleTVOneSources will update this
     
     // If we do not have two solid sources, act on this as we rely on the window having a source for crossfade behaviour
     // Once we've had two solid inputs, don't check any more as we're ok as the unit is set to hold on last frame.
-    // This is set to update kTVOneStatusLine regardless
-    bool ok = handleTVOneSources(true);
+    bool ok = handleTVOneSources();
     
     // Update display before starting mixer loop
     screen.sendBuffer();
@@ -962,8 +991,10 @@ int main()
                     screen.textToBuffer(sendOK, kTVOneStatusLine);
                 }
                 else if (advancedMenu.selectedItem().payload.command[0] == advancedTestSources)
-                {
-                    handleTVOneSources(true);
+                {   
+                    tvOneRGB1Stable = false;
+                    tvOneRGB2Stable = false;
+                    handleTVOneSources();
                 }
                 else if (advancedMenu.selectedItem().payload.command[0] == advancedConformProcessor)
                 {
@@ -1002,6 +1033,8 @@ int main()
             }
         }
         
+        // Send any updates to the display
+        screen.sendBuffer();
         
         //// MIX MIX MIX MIX MIX MIX MIX MIX MIX MIX MIX MIXMIX MIX MIXMIX MIX MIX MIX MIX MIXMIX MIX MIX
 
@@ -1180,14 +1213,11 @@ int main()
             processDMXOut(xFade, fadeUp);
         }
         
-        // If we're not actively mixing, we can do any housekeeping...
-        if (!updateFade)
+        // Housekeeping
+        if (tvOne.millisSinceLastCommandSent() > 1500)
         {
-            // We should check up on any source flagged unstable 
+            // We should check up on any source that hasn't ever been stable 
             if (!tvOneRGB1Stable || !tvOneRGB2Stable) handleTVOneSources();
         }
-        
-        // Send any updates to the display
-        screen.sendBuffer();
     }
 }

@@ -38,10 +38,9 @@
  * v19 - TVOne mixing comms further optimised - August'12
  * v20 - Keying values and resolutions load from USB mass storage - September'12
  * v21 - Mixing behaviour upgrade: blend-additive as continuum, test cards on startup if no valid source - October'12
+ * v22 - EDID passthrough override and EDID upload from USB mass storage
  * vxx - TODO: Set keying values from controller, requires a guided, step-through process for user
  * vxx - TODO: Defaults load/save from USB mass storage
- * vxx - TODO: EDID passthrough override
- * vxx - TODO: EDID upload from USB mass storage
  * vxx - TODO: EDID creation from resolution
  */
  
@@ -59,7 +58,7 @@
 #include "DMX.h"
 #include "filter.h"
 
-#define kSPKDFSoftwareVersion "21"
+#define kSPKDFSoftwareVersion "22"
 
 // MBED PINS
 
@@ -116,8 +115,8 @@
 //// DEBUG
 
 // Comment out one or the other...
-Serial *debug = new Serial(USBTX, USBRX); // For debugging via USB serial
-//Serial *debug = NULL; // For release (no debugging)
+//Serial *debug = new Serial(USBTX, USBRX); // For debugging via USB serial
+Serial *debug = NULL; // For release (no debugging)
 
 //// SOFT RESET
 
@@ -435,7 +434,7 @@ void actionMixMode()
     if (mixMode < mixKey)
     {
         // Set Keyer Off. Quicker to set and fail than to test for on and then turn off
-        ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerEnable, false);
+        tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerEnable, false);
         
         if (mixMode == mixBlend)    
         {
@@ -519,16 +518,28 @@ bool conformProcessor()
     int i;
     {
         LocalFileSystem local("local");
-        FILE *file = fopen("/local/matroxe.did", "r"); // 8.3, avoid .bin as mbed executable
-        for ( i=0; i<256; i++)
+        FILE *file = fopen("/local/matroxe.did", "r"); // 8.3, avoid .bin as mbed executable extension
+        if (file)
         {
-            int edidByte = fgetc(file);
-            if (edidByte == EOF) break;
-            else edidData[i] = edidByte;
+            for ( i=0; i<256; i++)
+            {
+                int edidByte = fgetc(file);
+                if (edidByte == EOF) break;
+                else edidData[i] = edidByte;
+            }
+            fclose(file);
+            
+            ok = ok && tvOne.uploadEDID(edidData, i, 3);
         }
-        fclose(file);
+        else
+        {
+            if (debug) debug->printf("Could not open Matrox EDID file 'matroxe.did'");
+        }
     }
-    ok = ok && tvOne.uploadEDID(edidData, i, 3);
+    
+    // Save current state in preset one
+    ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionPreset, 0);          // Set Preset 1
+    ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionPresetStore, 1);     // Store
     
     // Save current state for power on
     ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionPowerOnPresetStore, 1);
@@ -628,7 +639,7 @@ int main()
     advancedMenu.title = "Troubleshooting"; 
     advancedMenu.addMenuItem(SPKMenuItem("HDCP Off", advancedHDCPOff));
     advancedMenu.addMenuItem(SPKMenuItem("HDCP On", advancedHDCPOn));
-    advancedMenu.addMenuItem(SPKMenuItem("EDID Passthrough", advancedEDIDPassthrough)); // have global setting of passthrough that overrides resolution sets and is saved with conform processor
+    advancedMenu.addMenuItem(SPKMenuItem("EDID Passthrough", advancedEDIDPassthrough));
     advancedMenu.addMenuItem(SPKMenuItem("EDID Internal", advancedEDIDInternal));
     advancedMenu.addMenuItem(SPKMenuItem("Test Processor Sources", advancedTestSources));
     advancedMenu.addMenuItem(SPKMenuItem("Conform Processor", advancedConformProcessor));
@@ -684,6 +695,8 @@ int main()
 
     while (1) 
     {
+        bool updateMixMode = false;
+    
         //// Task background things
         if ((osc || artNet) && rj45Mode == rj45Ethernet)
         {
@@ -737,7 +750,7 @@ int main()
                     if (newMixMode != mixMode)
                     {
                         mixMode = newMixMode;
-                        actionMixMode();
+                        updateMixMode = true;
                     }
 
                     screen.clearBufferRow(kMenuLine2);
@@ -799,14 +812,14 @@ int main()
                     screen.characterToBuffer('X', 38 + fadeCurve*20.0f, kMenuLine2);
                     
                     mixMode = fadeCurve > 0 ? mixAdditive : mixBlend;
-                    actionMixMode();
+                    updateMixMode = true;
                 }
             }
             // With that out of the way, we should be actioning a specific menu's payload?
             else if (selectedMenu == &mixModeMenu)
             {
                 mixMode = mixModeMenu.selectedItem().payload.command[0];
-                actionMixMode();
+                updateMixMode = true;
             }
             else if (selectedMenu == &resolutionMenu)
             {
@@ -818,6 +831,9 @@ int main()
                 
                 ok = ok && tvOne.command(kTV1SourceRGB1, kTV1WindowIDA, kTV1FunctionAdjustSourceEDID, slot);
                 ok = ok && tvOne.command(kTV1SourceRGB2, kTV1WindowIDA, kTV1FunctionAdjustSourceEDID, slot);
+                
+                // Save new resolution and EDID into TV One unit for power-on. Cycling TV One power sometimes needed for EDID. Pffft.
+                if (ok) ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionPowerOnPresetStore, 1);
                 
                 string sentOK;
                 if (ok) sentOK = "Sent: ";
@@ -1160,6 +1176,9 @@ int main()
         else
             fadeBPercentHasChanged = newFadeBPercent != fadeBPercent;
         
+        // If changing mixMode from additive, we want to do this before updating fade values
+        if (updateMixMode && mixMode != mixAdditive) actionMixMode();
+        
         // We want to send the higher first, otherwise black flashes can happen on taps
         if (fadeAPercentHasChanged && newFadeAPercent >= newFadeBPercent) 
         {
@@ -1196,7 +1215,9 @@ int main()
             debug->printf("\r\n"); 
         }
         
-        
+        // If changing mixMode to additive, we want to do this before updating fade values
+        if (updateMixMode && mixMode == mixAdditive) actionMixMode();
+                
         //// TASK: Process Network Comms Out, ie. send out any fade updates
         if (commsMode == commsOSC && updateFade)
         {

@@ -115,8 +115,8 @@
 //// DEBUG
 
 // Comment out one or the other...
-Serial *debug = new Serial(USBTX, USBRX); // For debugging via USB serial
-//Serial *debug = NULL; // For release (no debugging)
+//Serial *debug = new Serial(USBTX, USBRX); // For debugging via USB serial
+Serial *debug = NULL; // For release (no debugging)
 
 //// SOFT RESET
 
@@ -813,9 +813,8 @@ int main()
                         screen.clearBufferRow(kMenuLine2);
                         
                         char paramLine[kStringBufferLength];
-                        snprintf(paramLine, kStringBufferLength, "[%3i/%3i][   /   ][   /   ]", settings.editingKeyerSetValue(SPKSettings::minY), 
-                                                                                                settings.editingKeyerSetValue(SPKSettings::maxY), 
-                                                                                                value);
+                        snprintf(paramLine, kStringBufferLength, "[%3i/%3i][   /   ][   /   ]", value,
+                                                                                                settings.editingKeyerSetValue(SPKSettings::maxY));
                         screen.textToBuffer(paramLine, kMenuLine2);
                         
                         tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerMinY, value);              
@@ -849,8 +848,8 @@ int main()
                         char paramLine[kStringBufferLength];
                         snprintf(paramLine, kStringBufferLength, "[%3i/%3i][%3i/%3i][   /   ]", settings.editingKeyerSetValue(SPKSettings::minY), 
                                                                                                 settings.editingKeyerSetValue(SPKSettings::maxY), 
-                                                                                                settings.editingKeyerSetValue(SPKSettings::minU), 
-                                                                                                value);
+                                                                                                value,
+                                                                                                settings.editingKeyerSetValue(SPKSettings::maxU));
                         screen.textToBuffer(paramLine, kMenuLine2);
                         
                         tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerMinU, value);              
@@ -887,9 +886,9 @@ int main()
                         snprintf(paramLine, kStringBufferLength, "[%3i/%3i][%3i/%3i][%3i/%3i]", settings.editingKeyerSetValue(SPKSettings::minY), 
                                                                                                 settings.editingKeyerSetValue(SPKSettings::maxY), 
                                                                                                 settings.editingKeyerSetValue(SPKSettings::minU), 
-                                                                                                settings.editingKeyerSetValue(SPKSettings::maxU), 
-                                                                                                settings.editingKeyerSetValue(SPKSettings::minV), 
-                                                                                                value);
+                                                                                                settings.editingKeyerSetValue(SPKSettings::maxU),
+                                                                                                value, 
+                                                                                                settings.editingKeyerSetValue(SPKSettings::maxV));
                         screen.textToBuffer(paramLine, kMenuLine2);
                         
                         tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerMinV, value);              

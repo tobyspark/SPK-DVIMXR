@@ -11,7 +11,9 @@
 # Name = What is shown in menu
 # MinY...MaxV = As per TVOne keyer settings. 
 # Note these are super sensitive, one laptop will have slightly different numbers to another to acheive otherwise the same -- ie. pure blue -- key.
- 
+#
+# Keying advice from the 1T-C2-750 Manual: The Min/Max parameters are used to select what range of Y (luminance/grey-scale) values are made transparent within the selected window/lock source. In order to key out part of an image, start with the max value and increase it until the required lighter parts within the window/lock source disappear. Then adjust the min level to bring back any darker parts of the image.
+
 [Key1]
 Name = Lumakey
 MinY = 0

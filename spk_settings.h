@@ -9,10 +9,13 @@ extern "C"
 
 class SPKSettings {
 public:
-    enum {minY = 0, maxY, minU, maxU, minV, maxV};
+    enum keyerParameterType {minY = 0, maxY, minU, maxU, minV, maxV};
+
+    int editingKeyerSetIndex;
 
     SPKSettings()
     {
+        editingKeyerSetIndex = -1;
         loadDefaults();
     }
     
@@ -105,7 +108,25 @@ public:
         return keyerParamSets.size();
     }
     
-        string resolutionName (int index)
+    int editingKeyerSetValue(keyerParameterType parameter)
+    {
+        int value = -1;
+        if (editingKeyerSetIndex >= 0 && editingKeyerSetIndex < keyerSetCount())
+        {
+            value = keyerParamSets[editingKeyerSetIndex][parameter];
+        }
+        return value;
+    }
+    
+    void setEditingKeyerSetValue(keyerParameterType parameter, int value)
+    {
+        if (editingKeyerSetIndex >= 0 && editingKeyerSetIndex < keyerSetCount())
+        {
+            keyerParamSets[editingKeyerSetIndex][parameter] = value;
+        }
+    }
+    
+    string resolutionName (int index)
     {
         // TODO: Bounds check and return out of bounds name
         return resolutionNames[index];

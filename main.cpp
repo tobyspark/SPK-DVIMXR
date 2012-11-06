@@ -39,8 +39,8 @@
  * v20 - Keying values and resolutions load from USB mass storage - September'12
  * v21 - Mixing behaviour upgrade: blend-additive as continuum, test cards on startup if no valid source - October'12
  * v22 - EDID passthrough override and EDID upload from USB mass storage
- * vxx - TODO: Set keying values from controller, requires a guided, step-through process for user
- * vxx - TODO: Defaults load/save from USB mass storage
+ * v23 - Set keying values from controller, requires a guided, step-through process for user
+ * vxx - TODO: Writes back to .ini on USB mass storage: keyer updates, comms, hdcp, edid internal/passthrough, ...?
  * vxx - TODO: EDID creation from resolution
  */
  
@@ -58,7 +58,7 @@
 #include "DMX.h"
 #include "filter.h"
 
-#define kSPKDFSoftwareVersion "22"
+#define kSPKDFSoftwareVersion "23"
 
 // MBED PINS
 
@@ -115,8 +115,8 @@
 //// DEBUG
 
 // Comment out one or the other...
-//Serial *debug = new Serial(USBTX, USBRX); // For debugging via USB serial
-Serial *debug = NULL; // For release (no debugging)
+Serial *debug = new Serial(USBTX, USBRX); // For debugging via USB serial
+//Serial *debug = NULL; // For release (no debugging)
 
 //// SOFT RESET
 
@@ -157,8 +157,16 @@ SPKMenu mainMenu;
 SPKMenu resolutionMenu;
 
 SPKMenu mixModeMenu;
-SPKMenu mixModeAdditiveMenu; 
-enum { mixBlend, mixAdditive, mixKey }; // additive will require custom TVOne firmware.
+SPKMenu mixModeAdditiveMenu;
+SPKMenu mixModeKeyerMenuUpdate; 
+SPKMenu mixModeKeyerMenuMinY;
+SPKMenu mixModeKeyerMenuMaxY;
+SPKMenu mixModeKeyerMenuMinU;
+SPKMenu mixModeKeyerMenuMaxU;
+SPKMenu mixModeKeyerMenuMinV;
+SPKMenu mixModeKeyerMenuMaxV;
+enum { mixBlend, mixAdditive, mixKey };
+int mixKeyStartIndex = 1; // need this hard coded as mixBlend and mixAdditive are now combined into the same menu item
 int mixMode = mixBlend; // Start with safe mix mode, and test to get out of it. Safe mode will work with inputs missing and without hold frames.
 float fadeCurve = 0.0f; // 0 = "X", ie. as per blend, 1 = "/\", ie. as per additive  <-- pictograms!
 
@@ -431,7 +439,7 @@ void actionMixMode()
     char sentMSGBuffer[kStringBufferLength];
 
     // Set Keyer
-    if (mixMode < mixKey)
+    if (mixMode < mixKeyStartIndex)
     {
         // Set Keyer Off. Quicker to set and fail than to test for on and then turn off
         tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerEnable, false);
@@ -453,7 +461,7 @@ void actionMixMode()
     }
     else
     {
-        int index = mixMode - mixKey;
+        int index = mixMode - mixKeyStartIndex;
 
         ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerEnable, true);
         ok = ok && setKeyParamsTo(index);
@@ -563,7 +571,7 @@ void setMixModeMenuItems()
     mixModeMenu.addMenuItem(SPKMenuItem("Crossfade", &mixModeAdditiveMenu));
     for (int i=0; i < settings.keyerSetCount(); i++)
     {
-        mixModeMenu.addMenuItem(SPKMenuItem(settings.keyerParamName(i), mixKey+i));
+        mixModeMenu.addMenuItem(SPKMenuItem(settings.keyerParamName(i), &mixModeKeyerMenuUpdate));
     }
     mixModeMenu.addMenuItem(SPKMenuItem("Back to Main Menu", &mainMenu));
 }
@@ -629,6 +637,28 @@ int main()
     
     mixModeAdditiveMenu.title = "Crossfade";
     mixModeAdditiveMenu.addMenuItem(SPKMenuItem("[title overridden]", &mixModeMenu, true));
+
+    mixModeKeyerMenuUpdate.title = "Update Keyer Settings?";
+    mixModeKeyerMenuUpdate.addMenuItem(SPKMenuItem("[title overridden]", &mixModeKeyerMenuMaxY, true));
+
+    mixModeKeyerMenuMaxY.title = "UP until lighter gone";
+    mixModeKeyerMenuMaxY.addMenuItem(SPKMenuItem("[title overridden]", &mixModeKeyerMenuMinY, true)); 
+ 
+    mixModeKeyerMenuMinY.title = "UP to bring back darker";
+    mixModeKeyerMenuMinY.addMenuItem(SPKMenuItem("[title overridden]", &mixModeKeyerMenuMaxU, true)); 
+
+    mixModeKeyerMenuMaxU.title = "UP until lighter gone";
+    mixModeKeyerMenuMaxU.addMenuItem(SPKMenuItem("[title overridden]", &mixModeKeyerMenuMinU, true)); 
+ 
+    mixModeKeyerMenuMinU.title = "UP to bring back darker";
+    mixModeKeyerMenuMinU.addMenuItem(SPKMenuItem("[title overridden]", &mixModeKeyerMenuMaxV, true)); 
+
+    mixModeKeyerMenuMaxV.title = "UP until lighter gone";
+    mixModeKeyerMenuMaxV.addMenuItem(SPKMenuItem("[title overridden]", &mixModeKeyerMenuMinV, true)); 
+ 
+    mixModeKeyerMenuMinV.title = "UP to bring back darker";
+    mixModeKeyerMenuMinV.addMenuItem(SPKMenuItem("[title overridden]", &mixModeMenu, true)); 
+ 
  
     resolutionMenu.title = "Resolution";
     setResolutionMenuItems();
@@ -759,6 +789,131 @@ int main()
                     
                     if (debug) debug->printf("Fade curve changed by %i to %f \r\n", menuChange, fadeCurve);
                 }
+                else if (selectedMenu == &mixModeKeyerMenuUpdate)
+                {
+                    if (menuChange < 0)
+                    {
+                        settings.editingKeyerSetIndex = mixModeMenu.selectedIndex() - mixKeyStartIndex;
+                        screen.textToBuffer("[Yes/  ]", kMenuLine2);
+                    }
+                    else
+                    {
+                        settings.editingKeyerSetIndex = -1;
+                        screen.textToBuffer("[   /No]", kMenuLine2);
+                    }
+                }
+                else if (selectedMenu == &mixModeKeyerMenuMinY)
+                {
+                        int value = settings.editingKeyerSetValue(SPKSettings::minY);
+                        value += menuChange;
+                        if (value < 0) value = 0;
+                        if (value > settings.editingKeyerSetValue(SPKSettings::maxY)) value = settings.editingKeyerSetValue(SPKSettings::maxY);
+                        settings.setEditingKeyerSetValue(SPKSettings::minY, value);
+                
+                        screen.clearBufferRow(kMenuLine2);
+                        
+                        char paramLine[kStringBufferLength];
+                        snprintf(paramLine, kStringBufferLength, "[%3i/%3i][   /   ][   /   ]", settings.editingKeyerSetValue(SPKSettings::minY), 
+                                                                                                settings.editingKeyerSetValue(SPKSettings::maxY), 
+                                                                                                value);
+                        screen.textToBuffer(paramLine, kMenuLine2);
+                        
+                        tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerMinY, value);              
+                }
+                else if (selectedMenu == &mixModeKeyerMenuMaxY)
+                {
+                        int value = settings.editingKeyerSetValue(SPKSettings::maxY);
+                        value += menuChange;
+                        if (value < 0) value = 0;
+                        if (value > 255) value = 255;
+                        settings.setEditingKeyerSetValue(SPKSettings::maxY, value);
+                
+                        screen.clearBufferRow(kMenuLine2);
+                        
+                        char paramLine[kStringBufferLength];
+                        snprintf(paramLine, kStringBufferLength, "[   /%3i][   /   ][   /   ]", value);
+                        screen.textToBuffer(paramLine, kMenuLine2);
+                        
+                        tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerMaxY, value);              
+                }
+                else if (selectedMenu == &mixModeKeyerMenuMinU)
+                {
+                        int value = settings.editingKeyerSetValue(SPKSettings::minU);
+                        value += menuChange;
+                        if (value > settings.editingKeyerSetValue(SPKSettings::maxU)) value = settings.editingKeyerSetValue(SPKSettings::maxU);
+                        if (value > 255) value = 255;
+                        settings.setEditingKeyerSetValue(SPKSettings::minU, value);
+                
+                        screen.clearBufferRow(kMenuLine2);
+                        
+                        char paramLine[kStringBufferLength];
+                        snprintf(paramLine, kStringBufferLength, "[%3i/%3i][%3i/%3i][   /   ]", settings.editingKeyerSetValue(SPKSettings::minY), 
+                                                                                                settings.editingKeyerSetValue(SPKSettings::maxY), 
+                                                                                                settings.editingKeyerSetValue(SPKSettings::minU), 
+                                                                                                value);
+                        screen.textToBuffer(paramLine, kMenuLine2);
+                        
+                        tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerMinU, value);              
+                }
+                else if (selectedMenu == &mixModeKeyerMenuMaxU)
+                {
+                        int value = settings.editingKeyerSetValue(SPKSettings::maxU);
+                        value += menuChange;
+                        if (value < 0) value = 0;
+                        if (value > 255) value = 255;
+                        settings.setEditingKeyerSetValue(SPKSettings::maxU, value);
+                
+                        screen.clearBufferRow(kMenuLine2);
+                        
+                        char paramLine[kStringBufferLength];
+                        snprintf(paramLine, kStringBufferLength, "[%3i/%3i][   /%3i][   /   ]", settings.editingKeyerSetValue(SPKSettings::minY), 
+                                                                                                settings.editingKeyerSetValue(SPKSettings::maxY),  
+                                                                                                value);
+                        screen.textToBuffer(paramLine, kMenuLine2);
+                        
+                        tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerMaxU, value);              
+                }
+                else if (selectedMenu == &mixModeKeyerMenuMinV)
+                {
+                        int value = settings.editingKeyerSetValue(SPKSettings::minV);
+                        value += menuChange;
+                        if (value > settings.editingKeyerSetValue(SPKSettings::maxV)) value = settings.editingKeyerSetValue(SPKSettings::maxV);
+                        if (value > 255) value = 255;
+                        settings.setEditingKeyerSetValue(SPKSettings::minV, value);
+                
+                        screen.clearBufferRow(kMenuLine2);
+                        
+                        char paramLine[kStringBufferLength];
+                        snprintf(paramLine, kStringBufferLength, "[%3i/%3i][%3i/%3i][%3i/%3i]", settings.editingKeyerSetValue(SPKSettings::minY), 
+                                                                                                settings.editingKeyerSetValue(SPKSettings::maxY), 
+                                                                                                settings.editingKeyerSetValue(SPKSettings::minU), 
+                                                                                                settings.editingKeyerSetValue(SPKSettings::maxU), 
+                                                                                                settings.editingKeyerSetValue(SPKSettings::minV), 
+                                                                                                value);
+                        screen.textToBuffer(paramLine, kMenuLine2);
+                        
+                        tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerMinV, value);              
+                }
+                else if (selectedMenu == &mixModeKeyerMenuMaxV)
+                {
+                        int value = settings.editingKeyerSetValue(SPKSettings::maxV);
+                        value += menuChange;
+                        if (value < 0) value = 0;
+                        if (value > 255) value = 255;
+                        settings.setEditingKeyerSetValue(SPKSettings::maxV, value);
+                
+                        screen.clearBufferRow(kMenuLine2);
+                        
+                        char paramLine[kStringBufferLength];
+                        snprintf(paramLine, kStringBufferLength, "[%3i/%3i][%3i/%3i][   /%3i]", settings.editingKeyerSetValue(SPKSettings::minY), 
+                                                                                                settings.editingKeyerSetValue(SPKSettings::maxY), 
+                                                                                                settings.editingKeyerSetValue(SPKSettings::minU), 
+                                                                                                settings.editingKeyerSetValue(SPKSettings::maxU),  
+                                                                                                value);
+                        screen.textToBuffer(paramLine, kMenuLine2);
+                        
+                        tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerMaxV, value);    
+                }
             }
             else
             {
@@ -814,13 +969,90 @@ int main()
                     mixMode = fadeCurve > 0 ? mixAdditive : mixBlend;
                     updateMixMode = true;
                 }
+                else if (selectedMenu == &mixModeKeyerMenuUpdate)
+                {
+                    screen.clearBufferRow(kMenuLine2);
+                    if (settings.editingKeyerSetIndex == mixModeMenu.selectedIndex() - mixKeyStartIndex)
+                        screen.textToBuffer("[Yes/  ]", kMenuLine2);
+                    else
+                        screen.textToBuffer("[   /No]", kMenuLine2);
+                    
+                    mixMode = mixKey;
+                    updateMixMode = true;
+                }
+                else if (selectedMenu == &mixModeKeyerMenuMinY)
+                {                    
+                    char paramLine[kStringBufferLength];
+                    screen.clearBufferRow(kMenuLine2);
+                    snprintf(paramLine, kStringBufferLength, "[%3i/%3i][   /   ][   /   ]", settings.editingKeyerSetValue(SPKSettings::minY), 
+                                                                                            settings.editingKeyerSetValue(SPKSettings::maxY));
+                    screen.textToBuffer(paramLine, kMenuLine2);
+                }
+                else if (selectedMenu == &mixModeKeyerMenuMaxY)
+                {
+                    // First, check outcome of menu that got us here: mixModeKeyerMenuUpdate
+                    if (settings.editingKeyerSetIndex == -1)
+                    {
+                        selectedMenu = &mixModeMenu;
+                        
+                        // update OLED lines 1&2
+                        screen.clearBufferRow(kMenuLine1);
+                        screen.clearBufferRow(kMenuLine2);
+                        screen.textToBuffer(selectedMenu->title, kMenuLine1);
+                        screen.textToBuffer(selectedMenu->selectedString(), kMenuLine2);
+                    }
+                    else
+                    {
+                        char paramLine[kStringBufferLength];
+                        screen.clearBufferRow(kMenuLine2);
+                        snprintf(paramLine, kStringBufferLength, "[   /%3i][   /   ][   /   ]", settings.editingKeyerSetValue(SPKSettings::maxY));
+                        screen.textToBuffer(paramLine, kMenuLine2);
+                    }
+                }
+                else if (selectedMenu == &mixModeKeyerMenuMinU)
+                {
+                    char paramLine[kStringBufferLength];
+                    screen.clearBufferRow(kMenuLine2);
+                    snprintf(paramLine, kStringBufferLength, "[%3i/%3i][%3i/%3i][   /   ]", settings.editingKeyerSetValue(SPKSettings::minY), 
+                                                                                            settings.editingKeyerSetValue(SPKSettings::maxY), 
+                                                                                            settings.editingKeyerSetValue(SPKSettings::minU), 
+                                                                                            settings.editingKeyerSetValue(SPKSettings::maxU));
+                    screen.textToBuffer(paramLine, kMenuLine2);
+                }
+                else if (selectedMenu == &mixModeKeyerMenuMaxU)
+                {
+                    char paramLine[kStringBufferLength];
+                    screen.clearBufferRow(kMenuLine2);
+                    snprintf(paramLine, kStringBufferLength, "[%3i/%3i][   /%3i][   /   ]", settings.editingKeyerSetValue(SPKSettings::minY), 
+                                                                                            settings.editingKeyerSetValue(SPKSettings::maxY), 
+                                                                                            settings.editingKeyerSetValue(SPKSettings::maxU));
+                    screen.textToBuffer(paramLine, kMenuLine2);                
+                }
+                else if (selectedMenu == &mixModeKeyerMenuMinV)
+                {
+                    char paramLine[kStringBufferLength];
+                    screen.clearBufferRow(kMenuLine2);
+                    snprintf(paramLine, kStringBufferLength, "[%3i/%3i][%3i/%3i][%3i/%3i]", settings.editingKeyerSetValue(SPKSettings::minY), 
+                                                                                            settings.editingKeyerSetValue(SPKSettings::maxY), 
+                                                                                            settings.editingKeyerSetValue(SPKSettings::minU), 
+                                                                                            settings.editingKeyerSetValue(SPKSettings::maxU), 
+                                                                                            settings.editingKeyerSetValue(SPKSettings::minV),
+                                                                                            settings.editingKeyerSetValue(SPKSettings::maxV));
+                    screen.textToBuffer(paramLine, kMenuLine2);
+                }
+                else if (selectedMenu == &mixModeKeyerMenuMaxV)
+                {
+                    char paramLine[kStringBufferLength];
+                    screen.clearBufferRow(kMenuLine2);
+                    snprintf(paramLine, kStringBufferLength, "[%3i/%3i][%3i/%3i][   /%3i]", settings.editingKeyerSetValue(SPKSettings::minY), 
+                                                                                            settings.editingKeyerSetValue(SPKSettings::maxY), 
+                                                                                            settings.editingKeyerSetValue(SPKSettings::minU), 
+                                                                                            settings.editingKeyerSetValue(SPKSettings::maxU),
+                                                                                            settings.editingKeyerSetValue(SPKSettings::maxV));
+                    screen.textToBuffer(paramLine, kMenuLine2);
+                }
             }
             // With that out of the way, we should be actioning a specific menu's payload?
-            else if (selectedMenu == &mixModeMenu)
-            {
-                mixMode = mixModeMenu.selectedItem().payload.command[0];
-                updateMixMode = true;
-            }
             else if (selectedMenu == &resolutionMenu)
             {
                 bool ok = true;
@@ -1156,7 +1388,7 @@ int main()
             newFadeAPercent = newFadeA * fadeUp * 100.0;
             newFadeBPercent = newFadeB * fadeUp * 100.0;
         }
-        else if (mixMode >= mixKey)
+        else if (mixMode >= mixKeyStartIndex)
         {
             newFadeAPercent = (1.0-xFade) * fadeUp * 100.0;
             newFadeBPercent = fadeUp * 100.0;

@@ -507,6 +507,8 @@ bool conformProcessor()
     int32_t fit = 1;
     ok = ok && tvOne.command(kTV1SourceRGB1, kTV1WindowIDA, kTV1FunctionAdjustSourceAspectCorrect, fit);
     ok = ok && tvOne.command(kTV1SourceRGB2, kTV1WindowIDA, kTV1FunctionAdjustSourceAspectCorrect, fit);
+    int32_t oneToOne = 4;
+    ok = ok && tvOne.command(kTV1SourceSIS2, kTV1WindowIDA, kTV1FunctionAdjustSourceAspectCorrect, oneToOne);
     
     // On source loss, hold on the last frame received.
     int32_t freeze = 1;
@@ -546,8 +548,8 @@ bool conformProcessor()
     }
     
     // Save current state in preset one
-    ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionPreset, 0);          // Set Preset 1
-    ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionPresetStore, 1);     // Store
+    //ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionPreset, 0);          // Set Preset 1
+    //ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionPresetStore, 1);     // Store
     
     // Save current state for power on
     ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionPowerOnPresetStore, 1);

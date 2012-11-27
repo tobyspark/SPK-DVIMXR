@@ -58,7 +58,7 @@
 #include "DMX.h"
 #include "filter.h"
 
-#define kSPKDFSoftwareVersion "23"
+#define kSPKDFSoftwareVersion "23.1"
 
 // MBED PINS
 
@@ -115,7 +115,7 @@
 //// DEBUG
 
 // Comment out one or the other...
-//Serial *debug = new Serial(USBTX, USBRX); // For debugging via USB serial
+// Serial *debug = new Serial(USBTX, USBRX); // For debugging via USB serial
 Serial *debug = NULL; // For release (no debugging)
 
 //// SOFT RESET
@@ -439,7 +439,7 @@ void actionMixMode()
     char sentMSGBuffer[kStringBufferLength];
 
     // Set Keyer
-    if (mixMode < mixKeyStartIndex)
+    if (mixMode < mixKey)
     {
         // Set Keyer Off. Quicker to set and fail than to test for on and then turn off
         tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerEnable, false);
@@ -461,7 +461,7 @@ void actionMixMode()
     }
     else
     {
-        int index = mixMode - mixKeyStartIndex;
+        int index = mixModeMenu.selectedIndex() - mixKeyStartIndex;
 
         ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerEnable, true);
         ok = ok && setKeyParamsTo(index);
@@ -548,8 +548,8 @@ bool conformProcessor()
     }
     
     // Save current state in preset one
-    //ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionPreset, 0);          // Set Preset 1
-    //ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionPresetStore, 1);     // Store
+    ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionPreset, 1);          // Set Preset 1
+    ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionPresetStore, 1);     // Store
     
     // Save current state for power on
     ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionPowerOnPresetStore, 1);

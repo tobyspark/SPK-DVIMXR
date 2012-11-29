@@ -58,7 +58,7 @@
 #include "DMX.h"
 #include "filter.h"
 
-#define kSPKDFSoftwareVersion "23.1"
+#define kSPKDFSoftwareVersion "23.2"
 
 // MBED PINS
 
@@ -522,6 +522,9 @@ bool conformProcessor()
     ok = ok && tvOne.command(kTV1SourceRGB2, kTV1WindowIDA, kTV1FunctionAdjustSourceEDID, slot);
     ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustWindowsMaxFadeLevel, 100);
     ok = ok && tvOne.command(0, kTV1WindowIDB, kTV1FunctionAdjustWindowsMaxFadeLevel, 100);
+    
+    // Set evil, evil HDCP off
+    ok = ok && tvOne.setHDCPOn(false);
     
     // Upload Matrox EDID to mem4 (ie. index 3). Use this EDID slot when setting Matrox resolutions.
     char edidData[256];

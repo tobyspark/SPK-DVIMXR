@@ -58,7 +58,7 @@
 #include "DMX.h"
 #include "filter.h"
 
-#define kSPKDFSoftwareVersion "23.2"
+#define kSPKDFSoftwareVersion "24"
 
 // MBED PINS
 
@@ -115,7 +115,7 @@
 //// DEBUG
 
 // Comment out one or the other...
-// Serial *debug = new Serial(USBTX, USBRX); // For debugging via USB serial
+//Serial *debug = new Serial(USBTX, USBRX); // For debugging via USB serial
 Serial *debug = NULL; // For release (no debugging)
 
 //// SOFT RESET
@@ -175,7 +175,7 @@ enum { commsNone, commsOSC, commsArtNet, commsDMXIn, commsDMXOut};
 int commsMode = commsNone;
 
 SPKMenu advancedMenu;
-enum { advancedHDCPOn, advancedHDCPOff, advancedEDIDPassthrough, advancedEDIDInternal, advancedTestSources, advancedConformProcessor, advancedLoadDefaults, advancedSetResolutions };
+enum { advancedHDCPOn, advancedHDCPOff, advancedEDIDPassthrough, advancedEDIDInternal, advancedTestSources, advancedConformProcessor, advancedConformUploadProcessor, advancedLoadDefaults, advancedSetResolutions };
 
 // RJ45 Comms
 enum { rj45Ethernet = 0, rj45DMX = 1}; // These values from circuit
@@ -526,36 +526,50 @@ bool conformProcessor()
     // Set evil, evil HDCP off
     ok = ok && tvOne.setHDCPOn(false);
     
-    // Upload Matrox EDID to mem4 (ie. index 3). Use this EDID slot when setting Matrox resolutions.
-    char edidData[256];
-    int i;
-    {
-        LocalFileSystem local("local");
-        FILE *file = fopen("/local/matroxe.did", "r"); // 8.3, avoid .bin as mbed executable extension
-        if (file)
-        {
-            for ( i=0; i<256; i++)
-            {
-                int edidByte = fgetc(file);
-                if (edidByte == EOF) break;
-                else edidData[i] = edidByte;
-            }
-            fclose(file);
-            
-            ok = ok && tvOne.uploadEDID(edidData, i, 3);
-        }
-        else
-        {
-            if (debug) debug->printf("Could not open Matrox EDID file 'matroxe.did'");
-        }
-    }
-    
     // Save current state in preset one
     ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionPreset, 1);          // Set Preset 1
     ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionPresetStore, 1);     // Store
     
     // Save current state for power on
     ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionPowerOnPresetStore, 1);
+    
+    return ok;
+}
+
+bool uploadToProcessor()
+{
+    bool ok = true;
+
+    LocalFileSystem local("local");
+    FILE *file;
+    
+    // Upload Matrox EDID to mem4 (ie. index 3). Use this EDID slot when setting Matrox resolutions.
+    {
+        file = fopen("/local/matroxe.did", "r"); // 8.3, avoid .bin as mbed executable extension
+        if (file)
+        {
+            ok = ok && tvOne.uploadEDID(file, 3);   
+            fclose(file);
+        }
+        else
+        {
+            if (debug) debug->printf("Could not open Matrox EDID file 'matroxe.did'");
+        }
+    }
+
+    // Upload Logo to SIS2. Use this (minimal) image when no sources are connected.
+    {
+        file = fopen("/local/spark.dat", "r"); // 8.3, avoid .bin as mbed executable extension
+        if (file)
+        {
+            ok = ok && tvOne.uploadImage(file, 1);   
+            fclose(file);
+        }
+        else
+        {
+            if (debug) debug->printf("Could not open image file 'spark.dat'");
+        }
+    }    
     
     return ok;
 }
@@ -677,8 +691,9 @@ int main()
     advancedMenu.addMenuItem(SPKMenuItem("EDID Passthrough", advancedEDIDPassthrough));
     advancedMenu.addMenuItem(SPKMenuItem("EDID Internal", advancedEDIDInternal));
     advancedMenu.addMenuItem(SPKMenuItem("Test Processor Sources", advancedTestSources));
-    advancedMenu.addMenuItem(SPKMenuItem("Conform Processor", advancedConformProcessor));
+    advancedMenu.addMenuItem(SPKMenuItem("Revert Processor", advancedConformProcessor));
     if (settingsAreCustom) advancedMenu.addMenuItem(SPKMenuItem("Revert Controller", advancedLoadDefaults));
+    advancedMenu.addMenuItem(SPKMenuItem("Conform Processor", advancedConformUploadProcessor));
     advancedMenu.addMenuItem(SPKMenuItem("Back to Main Menu", &mainMenu));
     
     mainMenu.title = "Main Menu";
@@ -1251,10 +1266,31 @@ int main()
                 else if (advancedMenu.selectedItem().payload.command[0] == advancedConformProcessor)
                 {
                     screen.clearBufferRow(kTVOneStatusLine);
-                    screen.textToBuffer("Conforming...", kTVOneStatusLine);
+                    screen.textToBuffer("Reverting...", kTVOneStatusLine);
                     screen.sendBuffer();
                     
                     bool ok = conformProcessor();
+                    
+                    std::string sendOK = ok ? "Reverting success" : "Send Error: Revert";
+                    
+                    screen.clearBufferRow(kTVOneStatusLine);
+                    screen.textToBuffer(sendOK, kTVOneStatusLine);
+                }
+                else if (advancedMenu.selectedItem().payload.command[0] == advancedConformUploadProcessor)
+                {
+                    bool ok = true;
+                
+                    screen.clearBufferRow(kTVOneStatusLine);
+                    screen.textToBuffer("Uploading...", kTVOneStatusLine);
+                    screen.sendBuffer();
+                    
+                    ok = ok && uploadToProcessor();                    
+                    
+                    screen.clearBufferRow(kTVOneStatusLine);
+                    screen.textToBuffer("Conforming...", kTVOneStatusLine);
+                    screen.sendBuffer();
+                    
+                    ok = ok && conformProcessor();
                     
                     std::string sendOK = ok ? "Conform success" : "Send Error: Conform";
                     

@@ -40,6 +40,7 @@
  * v21 - Mixing behaviour upgrade: blend-additive as continuum, test cards on startup if no valid source - October'12
  * v22 - EDID passthrough override and EDID upload from USB mass storage
  * v23 - Set keying values from controller, requires a guided, step-through process for user
+ * v24 - Conform uploads SIS image; now once firmware is loaded controller is all that is required
  * vxx - TODO: Writes back to .ini on USB mass storage: keyer updates, comms, hdcp, edid internal/passthrough, ...?
  * vxx - TODO: EDID creation from resolution
  */
@@ -58,7 +59,7 @@
 #include "DMX.h"
 #include "filter.h"
 
-#define kSPKDFSoftwareVersion "24"
+#define kSPKDFSoftwareVersion "24.1"
 
 // MBED PINS
 
@@ -364,7 +365,7 @@ bool handleTVOneSources()
     ok = ok && tvOne.readCommand(0, kTV1WindowIDB, kTV1FunctionAdjustWindowsWindowSource, payload);
     int sourceB = payload;
    
-    if (debug) debug->printf("HandleTVOneSources: RGB1: %i, RGB2: %i, sourceA: %#x, sourceB: %#i \r\n", RGB1, RGB2, sourceA, sourceB);
+    if (debug) debug->printf("HandleTVOneSources: RGB1: %i, RGB2: %i, sourceA: %#x, sourceB: %#x \r\n", RGB1, RGB2, sourceA, sourceB);
    
     string tvOneDetectString;
     if (!ok)
@@ -479,59 +480,68 @@ void actionMixMode()
 
 bool conformProcessor()
 {
-    bool ok = true;
+    bool ok;
                     
     int32_t on = 1;
     int32_t off = 0;
-    
-    // Independent output
-    ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionMode, 2);
-    ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustOutputsOutputEnable, on);
-    ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustOutputsLockMethod, off);
-                    
-    // Make sure our windows exist
-    ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustWindowsEnable, on);
-    ok = ok && tvOne.command(0, kTV1WindowIDB, kTV1FunctionAdjustWindowsEnable, on);
-    ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustWindowsLayerPriority, 0);
-    ok = ok && tvOne.command(0, kTV1WindowIDB, kTV1FunctionAdjustWindowsLayerPriority, 1);                
-        
-    // Assign inputs to windows, so that left on the crossfader is left on the processor viewed from front
-    ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustWindowsWindowSource, kTV1SourceRGB2);
-    ok = ok && tvOne.command(0, kTV1WindowIDB, kTV1FunctionAdjustWindowsWindowSource, kTV1SourceRGB1);
-    
-    // Set scaling to fit source within output, maintaining aspect ratio
-    ok = ok && tvOne.command(kTV1SourceRGB1, kTV1WindowIDA, kTV1FunctionAdjustWindowsZoomLevel, 100);
-    ok = ok && tvOne.command(kTV1SourceRGB1, kTV1WindowIDB, kTV1FunctionAdjustWindowsZoomLevel, 100);
-    ok = ok && tvOne.command(kTV1SourceRGB1, kTV1WindowIDA, kTV1FunctionAdjustWindowsShrinkEnable, off);
-    ok = ok && tvOne.command(kTV1SourceRGB1, kTV1WindowIDB, kTV1FunctionAdjustWindowsShrinkEnable, off);
     int32_t fit = 1;
-    ok = ok && tvOne.command(kTV1SourceRGB1, kTV1WindowIDA, kTV1FunctionAdjustSourceAspectCorrect, fit);
-    ok = ok && tvOne.command(kTV1SourceRGB2, kTV1WindowIDA, kTV1FunctionAdjustSourceAspectCorrect, fit);
     int32_t oneToOne = 4;
-    ok = ok && tvOne.command(kTV1SourceSIS2, kTV1WindowIDA, kTV1FunctionAdjustSourceAspectCorrect, oneToOne);
     
-    // On source loss, hold on the last frame received.
-    int32_t freeze = 1;
-    ok = ok && tvOne.command(kTV1SourceRGB1, kTV1WindowIDA, kTV1FunctionAdjustSourceOnSourceLoss, freeze);
-    ok = ok && tvOne.command(kTV1SourceRGB2, kTV1WindowIDA, kTV1FunctionAdjustSourceOnSourceLoss, freeze);
+    for (int i=0; i < 3; i++)
+    {
+        // Independent output
+        ok =       tvOne.command(0, kTV1WindowIDA, kTV1FunctionMode, 2);
+        ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustOutputsOutputEnable, on);
+        ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustOutputsLockMethod, off);
+                        
+        // Make sure our windows exist
+        ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustWindowsEnable, on);
+        ok = ok && tvOne.command(0, kTV1WindowIDB, kTV1FunctionAdjustWindowsEnable, on);
+        ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustWindowsLayerPriority, 0);
+        ok = ok && tvOne.command(0, kTV1WindowIDB, kTV1FunctionAdjustWindowsLayerPriority, 1);                
+            
+        // Assign inputs to windows, so that left on the crossfader is left on the processor viewed from front
+        ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustWindowsWindowSource, kTV1SourceRGB2);
+        ok = ok && tvOne.command(0, kTV1WindowIDB, kTV1FunctionAdjustWindowsWindowSource, kTV1SourceRGB1);
+        
+        // Set scaling to fit source within output, maintaining aspect ratio
+        ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustWindowsZoomLevel, 100);
+        ok = ok && tvOne.command(0, kTV1WindowIDB, kTV1FunctionAdjustWindowsZoomLevel, 100);
+        ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustWindowsShrinkEnable, off);
+        ok = ok && tvOne.command(0, kTV1WindowIDB, kTV1FunctionAdjustWindowsShrinkEnable, off);
+        ok = ok && tvOne.command(kTV1SourceRGB1, kTV1WindowIDA, kTV1FunctionAdjustSourceAspectCorrect, fit);
+        ok = ok && tvOne.command(kTV1SourceRGB2, kTV1WindowIDA, kTV1FunctionAdjustSourceAspectCorrect, fit);
+        ok = ok && tvOne.command(kTV1SourceSIS2, kTV1WindowIDA, kTV1FunctionAdjustSourceTestCard, 1);
+        ok = ok && tvOne.command(kTV1SourceSIS2, kTV1WindowIDA, kTV1FunctionAdjustSourceAspectCorrect, oneToOne);
+        
+        // On source loss, hold on the last frame received.
+        int32_t freeze = 1;
+        ok = ok && tvOne.command(kTV1SourceRGB1, kTV1WindowIDA, kTV1FunctionAdjustSourceOnSourceLoss, freeze);
+        ok = ok && tvOne.command(kTV1SourceRGB2, kTV1WindowIDA, kTV1FunctionAdjustSourceOnSourceLoss, freeze);
+        
+        // Set resolution and fade levels for maximum chance of being seen
+        ok = ok && tvOne.setResolution(kTV1ResolutionVGA, tvOneEDIDPassthrough ? EDIDPassthroughSlot : 5);
+        ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustWindowsMaxFadeLevel, 100);
+        ok = ok && tvOne.command(0, kTV1WindowIDB, kTV1FunctionAdjustWindowsMaxFadeLevel, 100);
+        
+        // Set evil, evil HDCP off
+        ok = ok && tvOne.setHDCPOn(false);
     
-    // Set resolution and fade levels for maximum chance of being seen
-    int32_t slot = tvOneEDIDPassthrough ? EDIDPassthroughSlot : 5;
-    ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustOutputsOutputResolution, kTV1ResolutionVGA);
-    ok = ok && tvOne.command(kTV1SourceRGB1, kTV1WindowIDA, kTV1FunctionAdjustSourceEDID, slot);
-    ok = ok && tvOne.command(kTV1SourceRGB2, kTV1WindowIDA, kTV1FunctionAdjustSourceEDID, slot);
-    ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustWindowsMaxFadeLevel, 100);
-    ok = ok && tvOne.command(0, kTV1WindowIDB, kTV1FunctionAdjustWindowsMaxFadeLevel, 100);
+        if (ok) break;
+        else tvOne.increaseCommandPeriods(500);
+    }
     
-    // Set evil, evil HDCP off
-    ok = ok && tvOne.setHDCPOn(false);
+    if (ok)
+    {
+        // Save current state in preset one
+        tvOne.command(0, kTV1WindowIDA, kTV1FunctionPreset, 1);          // Set Preset 1
+        tvOne.command(0, kTV1WindowIDA, kTV1FunctionPresetStore, 1);     // Store
+        
+        // Save current state for power on
+        tvOne.command(0, kTV1WindowIDA, kTV1FunctionPowerOnPresetStore, 1);
+    }
     
-    // Save current state in preset one
-    ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionPreset, 1);          // Set Preset 1
-    ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionPresetStore, 1);     // Store
-    
-    // Save current state for power on
-    ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionPowerOnPresetStore, 1);
+    tvOne.resetCommandPeriods();
     
     return ok;
 }
@@ -544,6 +554,11 @@ bool uploadToProcessor()
     FILE *file;
     
     // Upload Matrox EDID to mem4 (ie. index 3). Use this EDID slot when setting Matrox resolutions.
+    if (tvOne.getProcessorType().version < 415)
+    {
+        if (debug) debug->printf("Skipping EDID upload as unsupported on detected TV One firmware\r\n");
+    }
+    else
     {
         file = fopen("/local/matroxe.did", "r"); // 8.3, avoid .bin as mbed executable extension
         if (file)
@@ -553,7 +568,7 @@ bool uploadToProcessor()
         }
         else
         {
-            if (debug) debug->printf("Could not open Matrox EDID file 'matroxe.did'");
+            if (debug) debug->printf("Could not open Matrox EDID file 'matroxe.did'\r\n");
         }
     }
 
@@ -587,7 +602,16 @@ void setResolutionMenuItems()
 void setMixModeMenuItems()
 {
     mixModeMenu.clearMenuItems();
-    mixModeMenu.addMenuItem(SPKMenuItem("Crossfade", &mixModeAdditiveMenu));
+    
+    if (tvOne.getProcessorType().version == 423)
+    {
+        mixModeMenu.addMenuItem(SPKMenuItem("Crossfade", &mixModeAdditiveMenu));
+    }
+    else
+    {
+        mixModeMenu.addMenuItem(SPKMenuItem("Blend", mixBlend));
+    }
+    
     for (int i=0; i < settings.keyerSetCount(); i++)
     {
         mixModeMenu.addMenuItem(SPKMenuItem(settings.keyerParamName(i), &mixModeKeyerMenuUpdate));
@@ -708,14 +732,6 @@ int main()
     
     fadeAPO.period(0.001);
     fadeBPO.period(0.001);
-    
-    // Test for TV One connectivity and determine unit type
-    // TODO: Determine and fall back if not dfuser firmware?
-    // TODO: Use software version to select resolution slots?
-    // TODO: Use product / board type to select TVOne conform type?
-    // kTV1FunctionReadSoftwareVersion
-    // kTV1FunctionReadProductType
-    // kTV1FunctionReadBoardType
     
     // Display menu and framing lines
     screen.horizLineToBuffer(kMenuLine1*pixInPage - 1);
@@ -1072,19 +1088,22 @@ int main()
                 }
             }
             // With that out of the way, we should be actioning a specific menu's payload?
+            else if (selectedMenu == &mixModeMenu)
+            {
+                // mixAdditive and mixKeyXYZ are now SPKMenus so are handled above.
+                // This should only ever do mixBlend for non d-fuser firmware processors
+                mixMode = mixModeMenu.selectedItem().payload.command[0];
+                updateMixMode = true;
+            }
             else if (selectedMenu == &resolutionMenu)
             {
-                bool ok = true;
-                
-                ok =       tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustOutputsOutputResolution, resolutionMenu.selectedItem().payload.command[0]);
-                
+                bool ok;
                 int32_t slot = tvOneEDIDPassthrough ? EDIDPassthroughSlot : resolutionMenu.selectedItem().payload.command[1];
                 
-                ok = ok && tvOne.command(kTV1SourceRGB1, kTV1WindowIDA, kTV1FunctionAdjustSourceEDID, slot);
-                ok = ok && tvOne.command(kTV1SourceRGB2, kTV1WindowIDA, kTV1FunctionAdjustSourceEDID, slot);
+                ok = tvOne.setResolution(resolutionMenu.selectedItem().payload.command[0], slot);
                 
                 // Save new resolution and EDID into TV One unit for power-on. Cycling TV One power sometimes needed for EDID. Pffft.
-                if (ok) ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionPowerOnPresetStore, 1);
+                if (ok) tvOne.command(0, kTV1WindowIDA, kTV1FunctionPowerOnPresetStore, 1);
                 
                 string sentOK;
                 if (ok) sentOK = "Sent: ";
@@ -1309,7 +1328,7 @@ int main()
                 else if (advancedMenu.selectedItem().payload.command[0] == advancedSetResolutions)
                 {
                     bool ok;
-                    ok = tvOne.setCustomResolutions();
+                    ok = tvOne.uploadCustomResolutions();
                     
                     screen.clearBufferRow(kTVOneStatusLine);
                     screen.textToBuffer(ok ? "Resolutions set" : "Res' could not be set", kTVOneStatusLine);

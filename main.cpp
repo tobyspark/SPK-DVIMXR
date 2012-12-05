@@ -59,7 +59,7 @@
 #include "DMX.h"
 #include "filter.h"
 
-#define kSPKDFSoftwareVersion "24.1"
+#define kSPKDFSoftwareVersion "24.2"
 
 // MBED PINS
 
@@ -366,21 +366,18 @@ bool handleTVOneSources()
     int sourceB = payload;
    
     if (debug) debug->printf("HandleTVOneSources: RGB1: %i, RGB2: %i, sourceA: %#x, sourceB: %#x \r\n", RGB1, RGB2, sourceA, sourceB);
-   
-    string tvOneDetectString;
-    if (!ok)
+    
+    string tvOneDetectString = "TVOne: ";
+
+    if (ok)
     {
-        tvOneDetectString = "TVOne: link failed";
-    }
-    else if (!RGB1 || !RGB2) 
-    {
-        if (!RGB1 && !RGB2) tvOneDetectString = "TVOne: no sources";
-        else if (!RGB1)     tvOneDetectString = "TVOne: no right source";
-        else if (!RGB2)     tvOneDetectString = "TVOne: no left source";
-    }
-    else
-    {
-        tvOneDetectString = "TVOne: OK";
+        string right = RGB1 ? "Live" : (tvOneRGB1Stable ? "Hold" : "Logo");
+        string left  = RGB2 ? "Live" : (tvOneRGB2Stable ? "Hold" : "Logo");
+        
+        tvOneDetectString += "L: ";
+        tvOneDetectString += left;
+        tvOneDetectString += " R: ";
+        tvOneDetectString += right;
     }
     
     screen.clearBufferRow(kTVOneStatusLine);
@@ -714,9 +711,9 @@ int main()
     advancedMenu.addMenuItem(SPKMenuItem("HDCP On", advancedHDCPOn));
     advancedMenu.addMenuItem(SPKMenuItem("EDID Passthrough", advancedEDIDPassthrough));
     advancedMenu.addMenuItem(SPKMenuItem("EDID Internal", advancedEDIDInternal));
-    advancedMenu.addMenuItem(SPKMenuItem("Test Processor Sources", advancedTestSources));
+    //advancedMenu.addMenuItem(SPKMenuItem("Test Processor Sources", advancedTestSources));
+    //if (settingsAreCustom) advancedMenu.addMenuItem(SPKMenuItem("Revert Controller", advancedLoadDefaults));
     advancedMenu.addMenuItem(SPKMenuItem("Revert Processor", advancedConformProcessor));
-    if (settingsAreCustom) advancedMenu.addMenuItem(SPKMenuItem("Revert Controller", advancedLoadDefaults));
     advancedMenu.addMenuItem(SPKMenuItem("Conform Processor", advancedConformUploadProcessor));
     advancedMenu.addMenuItem(SPKMenuItem("Back to Main Menu", &mainMenu));
     
@@ -1525,11 +1522,15 @@ int main()
             processDMXOut(xFade, fadeUp);
         }
         
-        // Housekeeping
-        if (tvOne.millisSinceLastCommandSent() > 1500)
+        //// TASK: Housekeeping
+        
+        // We want to check every second or so, but not overwrite any messages from action by user.
+        // There's no sensible way to do this, so the following is a kludge, checking more frequently when its important.
+        int housekeepingPeriod = (!tvOneRGB1Stable || !tvOneRGB2Stable) ? 1500 : 5000;
+        if (tvOne.millisSinceLastCommandSent() > housekeepingPeriod)
         {
-            // We should check up on any source that hasn't ever been stable 
-            if (!tvOneRGB1Stable || !tvOneRGB2Stable) handleTVOneSources();
+            // Lets check on our sources
+            handleTVOneSources();
         }
     }
 }

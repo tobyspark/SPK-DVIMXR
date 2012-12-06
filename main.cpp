@@ -1,4 +1,4 @@
-/* *SPARK D-FUSER
+ /* *SPARK D-FUSER
  * A project by Toby Harris
  *
  * 'DJ' controller styke RS232 Control for TV-One products
@@ -600,7 +600,7 @@ void setMixModeMenuItems()
 {
     mixModeMenu.clearMenuItems();
     
-    if (tvOne.getProcessorType().version == 423)
+    if (tvOne.getProcessorType().version == 423 || tvOne.getProcessorType().version == -1)
     {
         mixModeMenu.addMenuItem(SPKMenuItem("Crossfade", &mixModeAdditiveMenu));
     }

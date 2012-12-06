@@ -1,4 +1,4 @@
- /* *SPARK D-FUSER
+/* *SPARK D-FUSER
  * A project by Toby Harris
  *
  * 'DJ' controller styke RS232 Control for TV-One products

@@ -192,5 +192,41 @@ private:
     Timeout signErrorTimeout;
 };
 
+class SPKMessageHold {
+public:
 
+    SPKMessageHold() {
+        holding = false;
+        currentMessage = "";
+        waitingMessage = "";
+    }
+    
+    void addMessage(string message, float minimumSeconds) {
+        if (minimumSeconds > 0.0f)
+        {
+            timeout.detach();
+            timeout.attach(this, &SPKMessageHold::handleTimeout, minimumSeconds);
+            holding = true;
+            currentMessage = message;
+        }
+        else
+        {
+            if (holding) waitingMessage = message;
+            else currentMessage = message;
+        }
+    }
+    
+    string message() { return currentMessage; }
 
+private:
+    void handleTimeout() {
+        currentMessage = waitingMessage;
+        waitingMessage = "";
+        holding = false;
+    }
+    
+    bool holding;
+    string currentMessage;
+    string waitingMessage;
+    Timeout timeout;
+};

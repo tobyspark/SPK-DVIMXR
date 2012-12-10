@@ -59,7 +59,7 @@
 #include "DMX.h"
 #include "filter.h"
 
-#define kSPKDFSoftwareVersion "24.2"
+#define kSPKDFSoftwareVersion "24.3"
 
 // MBED PINS
 
@@ -91,6 +91,7 @@
 #define kMenuLine2 4
 #define kCommsStatusLine 6
 #define kTVOneStatusLine 7
+#define kTVOneStatusMessageHoldTime 5
 
 // NETWORKING
 
@@ -148,6 +149,7 @@ SPKTVOne tvOne(kMBED_RS232_TTLTX, kMBED_RS232_TTLRX, LED3, LED4, debug);
 
 // SPKDisplay(PinName mosi, PinName clk, PinName cs, PinName dc, PinName res, Serial *debugSerial = NULL);
 SPKDisplay screen(kMBED_OLED_MOSI, kMBED_OLED_SCK, kMBED_OLED_CS, kMBED_OLED_DC, kMBED_OLED_RES, debug);
+SPKMessageHold tvOneStatusMessage;
 
 // Saved Settings
 SPKSettings settings;
@@ -380,8 +382,7 @@ bool handleTVOneSources()
         tvOneDetectString += right;
     }
     
-    screen.clearBufferRow(kTVOneStatusLine);
-    screen.textToBuffer(tvOneDetectString, kTVOneStatusLine);
+    tvOneStatusMessage.addMessage(tvOneDetectString, 0);
     
     // Assign appropriate source depending on whether DVI input is good
     // If that assign command completes ok, and the DVI input is good, finally flag the unit has had a live source
@@ -398,6 +399,11 @@ bool handleTVOneSources()
         if (!RGB2 && (sourceA != kTV1SourceSIS2)) ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustWindowsWindowSource, kTV1SourceSIS2);
         if (ok && RGB2) tvOneRGB2Stable = true;
     } 
+    
+    // It seemed best to conform / power on at 100% and only update fade levels if controls moved.
+    // However this doesn't seem to be entirely reliable in practice, so lets force the fade levels to the controls regardless
+    tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustWindowsMaxFadeLevel, fadeAPercent);
+    tvOne.command(0, kTV1WindowIDB, kTV1FunctionAdjustWindowsMaxFadeLevel, fadeBPercent);
         
     return ok;       
 }   
@@ -470,8 +476,7 @@ void actionMixMode()
     if (ok) sentOK = "Sent:";
     else sentOK = "Send Error:";
     
-    screen.clearBufferRow(kTVOneStatusLine);
-    screen.textToBuffer(sentOK + sentMSGBuffer, kTVOneStatusLine);
+    tvOneStatusMessage.addMessage(sentOK + sentMSGBuffer, kTVOneStatusMessageHoldTime);
 }
 
 
@@ -518,7 +523,7 @@ bool conformProcessor()
         
         // Set resolution and fade levels for maximum chance of being seen
         ok = ok && tvOne.setResolution(kTV1ResolutionVGA, tvOneEDIDPassthrough ? EDIDPassthroughSlot : 5);
-        ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustWindowsMaxFadeLevel, 100);
+        ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustWindowsMaxFadeLevel, 50);
         ok = ok && tvOne.command(0, kTV1WindowIDB, kTV1FunctionAdjustWindowsMaxFadeLevel, 100);
         
         // Set evil, evil HDCP off
@@ -729,6 +734,10 @@ int main()
     
     fadeAPO.period(0.001);
     fadeBPO.period(0.001);
+
+    // If we do not have two solid sources, act on this as we rely on the window having a source for crossfade behaviour
+    // Once we've had two solid inputs, don't check any more as we're ok as the unit is set to hold on last frame.
+    bool ok = handleTVOneSources();
     
     // Display menu and framing lines
     screen.horizLineToBuffer(kMenuLine1*pixInPage - 1);
@@ -739,13 +748,7 @@ int main()
     screen.horizLineToBuffer(kMenuLine2*pixInPage + pixInPage);
     screen.horizLineToBuffer(kCommsStatusLine*pixInPage - 1);
     screen.clearBufferRow(kTVOneStatusLine);
-    screen.textToBuffer("TVOne: OK", kTVOneStatusLine); // handleTVOneSources will update this
-    
-    // If we do not have two solid sources, act on this as we rely on the window having a source for crossfade behaviour
-    // Once we've had two solid inputs, don't check any more as we're ok as the unit is set to hold on last frame.
-    bool ok = handleTVOneSources();
-    
-    // Update display before starting mixer loop
+    screen.textToBuffer(tvOneStatusMessage.message(), kTVOneStatusLine);
     screen.sendBuffer();
     
     //// CONTROLS TEST
@@ -872,8 +875,8 @@ int main()
                 {
                         int value = settings.editingKeyerSetValue(SPKSettings::minU);
                         value += menuChange;
+                        if (value < 0) value = 0;
                         if (value > settings.editingKeyerSetValue(SPKSettings::maxU)) value = settings.editingKeyerSetValue(SPKSettings::maxU);
-                        if (value > 255) value = 255;
                         settings.setEditingKeyerSetValue(SPKSettings::minU, value);
                 
                         screen.clearBufferRow(kMenuLine2);
@@ -909,8 +912,8 @@ int main()
                 {
                         int value = settings.editingKeyerSetValue(SPKSettings::minV);
                         value += menuChange;
+                        if (value < 0) value = 0;
                         if (value > settings.editingKeyerSetValue(SPKSettings::maxV)) value = settings.editingKeyerSetValue(SPKSettings::maxV);
-                        if (value > 255) value = 255;
                         settings.setEditingKeyerSetValue(SPKSettings::minV, value);
                 
                         screen.clearBufferRow(kMenuLine2);
@@ -1109,8 +1112,7 @@ int main()
                 char sentMSGBuffer[kStringBufferLength];
                 snprintf(sentMSGBuffer, kStringBufferLength,"Res %i, EDID %i", resolutionMenu.selectedItem().payload.command[0], resolutionMenu.selectedItem().payload.command[1]);
                 
-                screen.clearBufferRow(kTVOneStatusLine);
-                screen.textToBuffer(sentOK + sentMSGBuffer, kTVOneStatusLine);
+                tvOneStatusMessage.addMessage(sentOK + sentMSGBuffer, kTVOneStatusMessageHoldTime);
                 
                 if (debug) { debug->printf("Changing resolution"); }
             }
@@ -1227,8 +1229,7 @@ int main()
                     
                     std::string sendOK = ok ? "Sent: HDCP Off" : "Send Error: HDCP Off";
                     
-                    screen.clearBufferRow(kTVOneStatusLine);
-                    screen.textToBuffer(sendOK, kTVOneStatusLine);
+                    tvOneStatusMessage.addMessage(sendOK, kTVOneStatusMessageHoldTime);
                 }
                 else if (advancedMenu.selectedItem().payload.command[0] == advancedHDCPOn)
                 {
@@ -1238,8 +1239,7 @@ int main()
                     
                     std::string sendOK = ok ? "Sent: HDCP On" : "Send Error: HDCP On";
                     
-                    screen.clearBufferRow(kTVOneStatusLine);
-                    screen.textToBuffer(sendOK, kTVOneStatusLine);
+                    tvOneStatusMessage.addMessage(sendOK, kTVOneStatusMessageHoldTime);
                 }
                 else if (advancedMenu.selectedItem().payload.command[0] == advancedEDIDPassthrough)
                 {
@@ -1254,8 +1254,7 @@ int main()
                     
                     std::string sendOK = ok ? "Sent: EDID. Next:conform?" : "Send Error: EDID";
                     
-                    screen.clearBufferRow(kTVOneStatusLine);
-                    screen.textToBuffer(sendOK, kTVOneStatusLine);
+                    tvOneStatusMessage.addMessage(sendOK, kTVOneStatusMessageHoldTime);
                 }
                 else if (advancedMenu.selectedItem().payload.command[0] == advancedEDIDInternal)
                 {
@@ -1270,8 +1269,7 @@ int main()
                     
                     std::string sendOK = ok ? "Sent: EDID. Next:conform?" : "Send Error: EDID";
                     
-                    screen.clearBufferRow(kTVOneStatusLine);
-                    screen.textToBuffer(sendOK, kTVOneStatusLine);
+                    tvOneStatusMessage.addMessage(sendOK, kTVOneStatusMessageHoldTime);
                 }
                 else if (advancedMenu.selectedItem().payload.command[0] == advancedTestSources)
                 {   
@@ -1289,8 +1287,7 @@ int main()
                     
                     std::string sendOK = ok ? "Reverting success" : "Send Error: Revert";
                     
-                    screen.clearBufferRow(kTVOneStatusLine);
-                    screen.textToBuffer(sendOK, kTVOneStatusLine);
+                    tvOneStatusMessage.addMessage(sendOK, kTVOneStatusMessageHoldTime);
                 }
                 else if (advancedMenu.selectedItem().payload.command[0] == advancedConformUploadProcessor)
                 {
@@ -1310,8 +1307,7 @@ int main()
                     
                     std::string sendOK = ok ? "Conform success" : "Send Error: Conform";
                     
-                    screen.clearBufferRow(kTVOneStatusLine);
-                    screen.textToBuffer(sendOK, kTVOneStatusLine);
+                    tvOneStatusMessage.addMessage(sendOK, kTVOneStatusMessageHoldTime);
                 }
                 else if (advancedMenu.selectedItem().payload.command[0] == advancedLoadDefaults)
                 {
@@ -1319,16 +1315,14 @@ int main()
                     setMixModeMenuItems();
                     setResolutionMenuItems();
                     
-                    screen.clearBufferRow(kTVOneStatusLine);
-                    screen.textToBuffer("Controller reverted", kTVOneStatusLine);
+                    tvOneStatusMessage.addMessage("Controller Reverted", kTVOneStatusMessageHoldTime);
                 }
                 else if (advancedMenu.selectedItem().payload.command[0] == advancedSetResolutions)
                 {
                     bool ok;
                     ok = tvOne.uploadCustomResolutions();
                     
-                    screen.clearBufferRow(kTVOneStatusLine);
-                    screen.textToBuffer(ok ? "Resolutions set" : "Res' could not be set", kTVOneStatusLine);
+                    tvOneStatusMessage.addMessage(ok ? "Resolutions set" : "Res' could not be set", kTVOneStatusMessageHoldTime);
                 }
             }
             else
@@ -1338,6 +1332,8 @@ int main()
         }
         
         // Send any updates to the display
+        screen.clearBufferRow(kTVOneStatusLine);
+        screen.textToBuffer(tvOneStatusMessage.message(), kTVOneStatusLine);
         screen.sendBuffer();
         
         //// MIX MIX MIX MIX MIX MIX MIX MIX MIX MIX MIX MIXMIX MIX MIXMIX MIX MIX MIX MIX MIXMIX MIX MIX
@@ -1524,10 +1520,7 @@ int main()
         
         //// TASK: Housekeeping
         
-        // We want to check every second or so, but not overwrite any messages from action by user.
-        // There's no sensible way to do this, so the following is a kludge, checking more frequently when its important.
-        int housekeepingPeriod = (!tvOneRGB1Stable || !tvOneRGB2Stable) ? 1500 : 5000;
-        if (tvOne.millisSinceLastCommandSent() > housekeepingPeriod)
+        if (tvOne.millisSinceLastCommandSent() > 1000)
         {
             // Lets check on our sources
             handleTVOneSources();

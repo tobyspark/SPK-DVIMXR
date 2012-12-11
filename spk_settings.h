@@ -292,6 +292,71 @@ public:
         return success;
     }
     
+    bool        saveEditingKeyerSet(string filename)
+    {
+        int success = 0;
+
+        local = new LocalFileSystem("local");
+        string filePath("/local/");
+        filePath += filename;
+
+        dictionary* settings = iniparser_load(filePath.c_str());
+        if (!settings) settings = dictionary_new(7); 
+                    
+        const int keyLength = 11;
+        const int valueLength = 4;
+        
+        char keyMinY[keyLength];
+        char valueMinY[valueLength];
+        snprintf(keyMinY, keyLength, "Key%i:MinY", editingKeyerSetIndex);
+        snprintf(valueMinY, valueLength, "%i", keyerParamSets[editingKeyerSetIndex][minY]);
+        success += iniparser_set(settings, keyMinY, valueMinY);
+        
+        char keyMaxY[keyLength];
+        char valueMaxY[valueLength];
+        snprintf(keyMaxY, keyLength, "Key%i:MaxY", editingKeyerSetIndex);
+        snprintf(valueMaxY, valueLength, "%i", keyerParamSets[editingKeyerSetIndex][maxY]);
+        success += iniparser_set(settings, keyMaxY, valueMaxY);
+        
+        char keyMinU[keyLength];
+        char valueMinU[valueLength];
+        snprintf(keyMinU, keyLength, "Key%i:MinU", editingKeyerSetIndex);
+        snprintf(valueMinU, valueLength, "%i", keyerParamSets[editingKeyerSetIndex][minU]);
+        success += iniparser_set(settings, keyMinU, valueMinU);
+        
+        char keyMaxU[keyLength];
+        char valueMaxU[valueLength];
+        snprintf(keyMaxU, keyLength, "Key%i:MaxU", editingKeyerSetIndex);
+        snprintf(valueMaxU, valueLength, "%i", keyerParamSets[editingKeyerSetIndex][maxU]);
+        success += iniparser_set(settings, keyMaxU, valueMaxU);
+        
+        char keyMinV[keyLength];
+        char valueMinV[valueLength];
+        snprintf(keyMinV, keyLength, "Key%i:MinV", editingKeyerSetIndex);
+        snprintf(valueMinV, valueLength, "%i", keyerParamSets[editingKeyerSetIndex][minV]);
+        success += iniparser_set(settings, keyMinV, valueMinV);
+        
+        char keyMaxV[keyLength];
+        char valueMaxV[valueLength];
+        snprintf(keyMaxV, keyLength, "Key%i:MaxV", editingKeyerSetIndex);
+        snprintf(valueMaxV, valueLength, "%i", keyerParamSets[editingKeyerSetIndex][maxV]);
+        success += iniparser_set(settings, keyMaxV, valueMaxV);
+        
+        FILE* file = fopen(filePath.c_str(), "w");
+        if (file)
+        {               
+            iniparser_dump_ini(settings, file);
+            
+            fclose(file);
+        }
+        
+        iniparser_freedict(settings);
+        
+        delete local;
+        
+        return (success == 0);
+    }
+    
 protected:
     LocalFileSystem *local;
     vector< vector<int> >   keyerParamSets;

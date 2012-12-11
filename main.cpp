@@ -310,8 +310,8 @@ void processDMXIn(float &xFade, float &fadeUp)
     int xFadeDMX = dmx->get(kDMXInChannelXFade);
     int fadeUpDMX = dmx->get(kDMXInChannelFadeUp);
 
-    xFade = (float)xFadeDMX/255;
-    fadeUp = (float)fadeUpDMX/255;
+    xFade = (float)xFadeDMX/255.0f;
+    fadeUp = (float)fadeUpDMX/255.0f;
 
     screen.clearBufferRow(kCommsStatusLine);
     snprintf(statusMessageBuffer, kStringBufferLength, "DMX In: xF %3i fUp %3i", xFadeDMX, fadeUpDMX);
@@ -324,8 +324,8 @@ void processDMXOut(float &xFade, float &fadeUp)
 {
     char statusMessageBuffer[kStringBufferLength];
 
-    int xFadeDMX = xFade*255;
-    int fadeUpDMX = fadeUp*255;
+    int xFadeDMX = xFade*255.0f;
+    int fadeUpDMX = fadeUp*255.0f;
     
     dmx->put(kDMXOutChannelXFade, xFadeDMX);
     dmx->put(kDMXOutChannelFadeUp, fadeUpDMX);
@@ -1061,7 +1061,9 @@ void mixModeUpdateKeyMenuHandler(int menuChange, bool action)
     }
     else if (actionCount == 8)
     {
-        // A save dialog would go here
+        // Work in progress: persistence
+        bool ok = settings.saveEditingKeyerSet("keySaves.ini");
+        if (debug) debug->printf("Saved: %s\r\n", ok ? "yes" : "no");
         
         // Get back to menu
         actionCount = 0;

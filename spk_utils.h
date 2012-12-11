@@ -65,28 +65,34 @@ class SPKMenu;
 
 class SPKMenuItem {
 public:
-    enum itemType { changesToMenu, sendsCommand };
+    enum itemType { changesToMenu, sendsCommand, hasHandler };
     itemType type;
     string text;
-    bool handlingControls;
+    void (*handler)(int, bool);
     union {
         SPKMenu* menu;
         int32_t command[2];
+        void (*handler)(int, bool);
     } payload;
     
-    SPKMenuItem(string title, SPKMenu* menu, bool handlesControls = false)
+    SPKMenuItem(string title, SPKMenu* menu)
     {
         text = title;
         type = changesToMenu;
-        handlingControls = handlesControls;
         payload.menu = menu;
+    }
+    
+    SPKMenuItem(void (*menuItemHandler)(int, bool))
+    {
+        text = "[has handler]";
+        type = hasHandler;
+        payload.handler = menuItemHandler;
     }
     
     SPKMenuItem(string title, int32_t command)
     {
         text = title;
         type = sendsCommand;
-        handlingControls = false;
         payload.command[0] = command;
         payload.command[1] = 0;
     }
@@ -95,7 +101,6 @@ public:
     {
         text = title;
         type = sendsCommand;
-        handlingControls = false;
         payload.command[0] = command1;
         payload.command[1] = command2;
     }

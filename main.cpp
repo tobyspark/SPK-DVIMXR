@@ -173,10 +173,13 @@ SPKMenu commsMenu;
 enum { commsNone, commsOSC, commsArtNet, commsDMXIn, commsDMXOut};
 int commsMode = commsNone;
 
+SPKMenu troubleshootingMenu;
+SPKMenu troubleshootingMenuHDCP;
+SPKMenu troubleshootingMenuEDID;
+SPKMenu troubleshootingMenuReset;
+
 SPKMenu advancedMenu;
-SPKMenu advancedMenuHDCP;
-SPKMenu advancedMenuEDID;
-enum { advancedHDCPOn, advancedHDCPOff, advancedEDIDPassthrough, advancedEDIDInternal, advancedTestSources, advancedConformProcessor, advancedConformUploadProcessor, advancedLoadDefaults, advancedSetResolutions };
+enum { advancedConformUploadProcessor, advancedSetResolutions };
 
 // RJ45 Comms
 enum { rj45Ethernet = 0, rj45DMX = 1}; // These values from circuit
@@ -310,8 +313,8 @@ void processDMXIn(float &xFade, float &fadeUp)
     int xFadeDMX = dmx->get(kDMXInChannelXFade);
     int fadeUpDMX = dmx->get(kDMXInChannelFadeUp);
 
-    xFade = (float)xFadeDMX/255.0f;
-    fadeUp = (float)fadeUpDMX/255.0f;
+    xFade = (float)xFadeDMX/255;
+    fadeUp = (float)fadeUpDMX/255;
 
     screen.clearBufferRow(kCommsStatusLine);
     snprintf(statusMessageBuffer, kStringBufferLength, "DMX In: xF %3i fUp %3i", xFadeDMX, fadeUpDMX);
@@ -324,8 +327,8 @@ void processDMXOut(float &xFade, float &fadeUp)
 {
     char statusMessageBuffer[kStringBufferLength];
 
-    int xFadeDMX = xFade*255.0f;
-    int fadeUpDMX = fadeUp*255.0f;
+    int xFadeDMX = xFade*255;
+    int fadeUpDMX = fadeUp*255;
     
     dmx->put(kDMXOutChannelXFade, xFadeDMX);
     dmx->put(kDMXOutChannelFadeUp, fadeUpDMX);
@@ -407,13 +410,32 @@ bool handleTVOneSources()
         notOKCounter = 0;
         tvOne.resetCommandPeriods();
     }
-    else if (++notOKCounter == 5) 
+    else 
     {
-        printf("Handling 5x Not OK: increasing command periods\r\n");
-        tvOne.increaseCommandPeriods(1500);
+        notOKCounter++;
+        if (notOKCounter == 5)
+        {
+            tvOne.increaseCommandPeriods(200);
+        }
+        if (notOKCounter == 6)
+        {
+            tvOne.resetCommandPeriods();
+        }
+        if (notOKCounter % 15 == 0)
+        {
+            tvOneStatusMessage.addMessage("TVOne: Resetting link", 2.0f);
+            screen.textToBuffer(tvOneStatusMessage.message(), kTVOneStatusLine);
+            screen.sendBuffer();
+            
+            tvOne.increaseCommandPeriods(1000);
+        }
+        if (notOKCounter % 15 == 1)
+        {
+            tvOne.resetCommandPeriods();
+        }
     }
     
-    return ok;       
+    return ok;
 }   
 
 bool setKeyParamsTo(int index) 
@@ -730,7 +752,7 @@ void mixModeAdditiveMenuHandler(int change, bool action)
     }
 }
 
-void advancedMenuHDCPHandler(int change, bool action)
+void troubleshootingMenuHDCPHandler(int change, bool action)
 {
     static int currentHDCP;
     static unsigned int state = 1;
@@ -795,7 +817,7 @@ void advancedMenuHDCPHandler(int change, bool action)
         }
         
         // Get back to menu
-        selectedMenu = &advancedMenu;
+        selectedMenu = &troubleshootingMenu;
         
         screen.clearBufferRow(kMenuLine1);
         screen.clearBufferRow(kMenuLine2);
@@ -804,7 +826,7 @@ void advancedMenuHDCPHandler(int change, bool action)
     }
 }
 
-void advancedMenuEDIDHandler(int change, bool action)
+void troubleshootingMenuEDIDHandler(int change, bool action)
 {
     static int currentEDIDPassthrough;
     static unsigned int state = 1;
@@ -836,7 +858,7 @@ void advancedMenuEDIDHandler(int change, bool action)
     char paramLine[kStringBufferLength];
     screen.clearBufferRow(kMenuLine2);
     
-    const char* current = currentEDIDPassthrough == -1 ? "Mixed" : ( currentEDIDPassthrough == 1 ? "Thru" : "Int");
+    const char* current = currentEDIDPassthrough == -1 ? "Mixed" : ( currentEDIDPassthrough == 1 ? "Thru" : "Internal");
     
     if (state % 2) snprintf(paramLine, kStringBufferLength, "%s. Set: [%s/      ]?", current, currentEDIDPassthrough == 0 ? "Thru" : "Int");
     else           snprintf(paramLine, kStringBufferLength, "%s. Set: [   /Cancel]?", current);      
@@ -869,7 +891,7 @@ void advancedMenuEDIDHandler(int change, bool action)
         }
             
         // Get back to menu
-        selectedMenu = &advancedMenu;
+        selectedMenu = &troubleshootingMenu;
         
         screen.clearBufferRow(kMenuLine1);
         screen.clearBufferRow(kMenuLine2);
@@ -917,6 +939,12 @@ void mixModeUpdateKeyMenuHandler(int menuChange, bool action)
             settings.setEditingKeyerSetValue(SPKSettings::maxU, 255);
             settings.setEditingKeyerSetValue(SPKSettings::minV, 0);
             settings.setEditingKeyerSetValue(SPKSettings::maxV, 255);
+            tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerMinY, 0);
+            tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerMaxY, 255);
+            tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerMinU, 0);
+            tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerMaxU, 255);
+            tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerMinV, 0);
+            tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerMaxV, 255);
             actionCount++;
             state = 0;
         }
@@ -1061,13 +1089,136 @@ void mixModeUpdateKeyMenuHandler(int menuChange, bool action)
     }
     else if (actionCount == 8)
     {
-        // Work in progress: persistence
-        bool ok = settings.saveEditingKeyerSet("keySaves.ini");
-        if (debug) debug->printf("Saved: %s\r\n", ok ? "yes" : "no");
+        // A save dialog would go here
         
         // Get back to menu
         actionCount = 0;
         selectedMenu = &mixModeMenu;
+        screen.clearBufferRow(kMenuLine1);
+        screen.clearBufferRow(kMenuLine2);
+        screen.textToBuffer(selectedMenu->title, kMenuLine1);
+        screen.textToBuffer(selectedMenu->selectedString(), kMenuLine2);
+    }
+}
+
+void troubleshootingMenuResetHandler(int menuChange, bool action)
+{
+    static int actionCount = 0;
+    static unsigned int state = 0;
+    
+    if (action) actionCount++;
+    
+    if (actionCount == 0)
+    {
+        screen.clearBufferRow(kMenuLine2);
+        
+        state += menuChange;
+        switch (state % 2) 
+        {
+            case 0: screen.textToBuffer("1. Controller [Reset/    ]", kMenuLine2); break;
+            case 1: screen.textToBuffer("1. Controller [     /Skip]", kMenuLine2); break;
+        }
+    }
+    if (actionCount == 1)
+    {
+        state = state % 2;
+        
+        if (state == 0) 
+        {
+            tvOneRGB1Stable = false;
+            tvOneRGB2Stable = false;
+            handleTVOneSources();
+            
+            settings.editingKeyerSetIndex = -1;
+            keyerParamsSet = -1;
+            bool ok = settings.load(kSPKDFSettingsFilename);
+            if (!ok) settings.loadDefaults();
+            
+            setMixModeMenuItems();
+            setResolutionMenuItems();
+            
+            actionCount++;
+        }
+        else if (state == 1)
+        {
+            actionCount++;
+        }
+        
+        state = 0;
+    }
+    if (actionCount == 2)
+    {
+        screen.clearBufferRow(kMenuLine2);
+        
+        state += menuChange;
+        switch (state % 2) 
+        {
+            case 0: screen.textToBuffer("2. Processor [Reset/    ]", kMenuLine2); break;
+            case 1: screen.textToBuffer("2. Processor [     /Skip]", kMenuLine2); break;
+        }  
+    }
+    if (actionCount == 3)
+    {
+        state = state % 2;
+        
+        if (state == 0) 
+        {
+            screen.clearBufferRow(kMenuLine2);
+            screen.textToBuffer("Find MENU+STANDBY buttons", kMenuLine2);
+        }
+        else if (state == 1)
+        {
+            actionCount = actionCount + 3; // extra stage to skip
+        }
+        
+        state = 0;
+    }
+    if (actionCount == 4)
+    {
+        Timer timer;
+        timer.start();
+        
+        while (timer.read_ms() < 16000)
+        {
+            screen.clearBufferRow(kMenuLine2);
+            char messageBuffer[kStringBufferLength];
+            snprintf(messageBuffer, kStringBufferLength,"Hold buttons for [%i sec]", 15 - (timer.read_ms() / 1000));
+            screen.textToBuffer(messageBuffer, kMenuLine2);
+            screen.sendBuffer();
+        }
+        
+        screen.clearBufferRow(kMenuLine2);
+        screen.textToBuffer("Hold buttons for [NEXT]", kMenuLine2);
+    }
+    if (actionCount == 5)
+    {
+        screen.clearBufferRow(kMenuLine2);
+        screen.textToBuffer("Updating processor [---]", kMenuLine2);
+        screen.clearBufferRow(kTVOneStatusLine);
+        screen.textToBuffer("Sending...", kTVOneStatusLine);
+        screen.sendBuffer();
+    
+        bool ok = conformProcessor();
+        
+        std::string sendOK = ok ? "TVOne: Reset success" : "Send Error: Reset";
+    
+        tvOneStatusMessage.addMessage(sendOK, kTVOneStatusMessageHoldTime);
+        
+        tvOneRGB1Stable = false;
+        tvOneRGB2Stable = false;
+        handleTVOneSources();
+        
+        actionCount++;
+    }
+    if (actionCount == 6)
+    {
+        screen.textToBuffer("3. No more steps [DONE]", kMenuLine2);
+    }
+    if (actionCount == 7)
+    {
+        // Get back to menu
+        actionCount = 0;
+        selectedMenu = &troubleshootingMenu;
         screen.clearBufferRow(kMenuLine1);
         screen.clearBufferRow(kMenuLine2);
         screen.textToBuffer(selectedMenu->title, kMenuLine1);
@@ -1122,24 +1273,28 @@ int main()
     commsMenu.title = "Network Mode";
     setCommsMenuItems();
     
-    advancedMenu.title = "Troubleshooting"; 
-    advancedMenuHDCP.title = "HDCP - Can Block DVI";
-    advancedMenuHDCP.addMenuItem(SPKMenuItem(&advancedMenuHDCPHandler));
-    advancedMenu.addMenuItem(SPKMenuItem(advancedMenuHDCP.title, &advancedMenuHDCP));
-    advancedMenuEDID.title = "EDID - Advertises Res's";
-    advancedMenuEDID.addMenuItem(SPKMenuItem(advancedMenuEDIDHandler));
-    advancedMenu.addMenuItem(SPKMenuItem(advancedMenuEDID.title, &advancedMenuEDID));
-    //advancedMenu.addMenuItem(SPKMenuItem("Test Processor Sources", advancedTestSources));
-    //if (settingsAreCustom) advancedMenu.addMenuItem(SPKMenuItem("Revert Controller", advancedLoadDefaults));
-    advancedMenu.addMenuItem(SPKMenuItem("Revert Processor", advancedConformProcessor));
-    advancedMenu.addMenuItem(SPKMenuItem("Conform Processor", advancedConformUploadProcessor));
-    advancedMenu.addMenuItem(SPKMenuItem("Back to Main Menu", &mainMenu));
+    advancedMenu.title = "Advanced Commands";
+    advancedMenu.addMenuItem(SPKMenuItem("Processor full conform", advancedConformUploadProcessor));
+    advancedMenu.addMenuItem(SPKMenuItem("Back to Troubleshooting Menu", &troubleshootingMenu));
+    
+    troubleshootingMenu.title = "Troubleshooting"; 
+    troubleshootingMenuHDCP.title = "HDCP - Can Block DVI";
+    troubleshootingMenuHDCP.addMenuItem(SPKMenuItem(&troubleshootingMenuHDCPHandler));
+    troubleshootingMenu.addMenuItem(SPKMenuItem(troubleshootingMenuHDCP.title, &troubleshootingMenuHDCP));
+    troubleshootingMenuEDID.title = "EDID - Advertises Res's";
+    troubleshootingMenuEDID.addMenuItem(SPKMenuItem(troubleshootingMenuEDIDHandler));
+    troubleshootingMenu.addMenuItem(SPKMenuItem(troubleshootingMenuEDID.title, &troubleshootingMenuEDID));
+    troubleshootingMenuReset.title = "Output - Mixing Wrong";
+    troubleshootingMenuReset.addMenuItem(SPKMenuItem(&troubleshootingMenuResetHandler));
+    troubleshootingMenu.addMenuItem(SPKMenuItem(troubleshootingMenuReset.title, &troubleshootingMenuReset));
+    troubleshootingMenu.addMenuItem(SPKMenuItem(advancedMenu.title, &advancedMenu));
+    troubleshootingMenu.addMenuItem(SPKMenuItem("Back to Main Menu", &mainMenu));
     
     mainMenu.title = "Main Menu";
     mainMenu.addMenuItem(SPKMenuItem(mixModeMenu.title, &mixModeMenu));
     mainMenu.addMenuItem(SPKMenuItem(resolutionMenu.title, &resolutionMenu));
     mainMenu.addMenuItem(SPKMenuItem(commsMenu.title, &commsMenu));
-    mainMenu.addMenuItem(SPKMenuItem(advancedMenu.title, &advancedMenu));
+    mainMenu.addMenuItem(SPKMenuItem(troubleshootingMenu.title, &troubleshootingMenu));
       
     selectedMenu = &mainMenu;
       
@@ -1427,41 +1582,7 @@ int main()
             }
             else if (selectedMenu == &advancedMenu)
             {
-                if (advancedMenu.selectedItem().payload.command[0] == advancedHDCPOff)
-                {
-                    // Has handler
-                }
-                else if (advancedMenu.selectedItem().payload.command[0] == advancedHDCPOn)
-                {
-                    // Has handler
-                }
-                else if (advancedMenu.selectedItem().payload.command[0] == advancedEDIDPassthrough)
-                {
-                    // Has handler
-                }
-                else if (advancedMenu.selectedItem().payload.command[0] == advancedEDIDInternal)
-                {
-                    // Has handler
-                }
-                else if (advancedMenu.selectedItem().payload.command[0] == advancedTestSources)
-                {   
-                    tvOneRGB1Stable = false;
-                    tvOneRGB2Stable = false;
-                    handleTVOneSources();
-                }
-                else if (advancedMenu.selectedItem().payload.command[0] == advancedConformProcessor)
-                {
-                    screen.clearBufferRow(kTVOneStatusLine);
-                    screen.textToBuffer("Reverting...", kTVOneStatusLine);
-                    screen.sendBuffer();
-                    
-                    bool ok = conformProcessor();
-                    
-                    std::string sendOK = ok ? "Reverting success" : "Send Error: Revert";
-                    
-                    tvOneStatusMessage.addMessage(sendOK, kTVOneStatusMessageHoldTime);
-                }
-                else if (advancedMenu.selectedItem().payload.command[0] == advancedConformUploadProcessor)
+                if (advancedMenu.selectedItem().payload.command[0] == advancedConformUploadProcessor)
                 {
                     bool ok = true;
                 
@@ -1481,21 +1602,13 @@ int main()
                     
                     tvOneStatusMessage.addMessage(sendOK, kTVOneStatusMessageHoldTime);
                 }
-                else if (advancedMenu.selectedItem().payload.command[0] == advancedLoadDefaults)
-                {
-                    settings.loadDefaults();
-                    setMixModeMenuItems();
-                    setResolutionMenuItems();
-                    
-                    tvOneStatusMessage.addMessage("Controller Reverted", kTVOneStatusMessageHoldTime);
-                }
-                else if (advancedMenu.selectedItem().payload.command[0] == advancedSetResolutions)
-                {
-                    bool ok;
-                    ok = tvOne.uploadCustomResolutions();
-                    
-                    tvOneStatusMessage.addMessage(ok ? "Resolutions set" : "Res' could not be set", kTVOneStatusMessageHoldTime);
-                }
+//                else if (advancedMenu.selectedItem().payload.command[0] == advancedSetResolutions)
+//                {
+//                    bool ok;
+//                    ok = tvOne.uploadCustomResolutions();
+//                    
+//                    tvOneStatusMessage.addMessage(ok ? "Resolutions set" : "Res' could not be set", kTVOneStatusMessageHoldTime);
+//                }
             }
             else
             {
@@ -1588,9 +1701,20 @@ int main()
 
         if (mixMode == mixBlend) 
         {
-            // window A occludes B. this is fast as only A changes with xFade.
-            newFadeAPercent = (1.0-xFade) * fadeUp * 100.0;
-            newFadeBPercent = fadeUp * 100.0;
+            // This is the correct algorithm for blend where window A occludes B.
+            // Who knew a crossfade could be so tricky. The level of B has to be factored by what A is letting through.
+            // ie. if fully faded up, top window = xfade, bottom window = 100%
+            // This will however look very wrong if A is not occluding B, ie. mismatched aspect ratios.
+            if (xFade > 0) // avoids div by zero (if xFade = 0 and fadeUp = 1, B sum = 0 / 0)
+            {
+                newFadeAPercent = (1.0-xFade) * fadeUp * 100.0;
+                newFadeBPercent = (xFade*fadeUp) / (1.0 - fadeUp + xFade*fadeUp) * 100.0;
+            }
+            else
+            {
+                newFadeAPercent = fadeUp * 100.0;
+                newFadeBPercent = 0;
+            }
         }
         else if (mixMode == mixAdditive)
         {

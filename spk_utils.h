@@ -212,6 +212,7 @@ public:
             timeout.detach();
             timeout.attach(this, &SPKMessageHold::handleTimeout, minimumSeconds);
             holding = true;
+            waitingMessage = currentMessage;
             currentMessage = message;
         }
         else

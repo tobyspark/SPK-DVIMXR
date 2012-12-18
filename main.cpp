@@ -427,7 +427,7 @@ bool handleTVOneSources()
             screen.textToBuffer(tvOneStatusMessage.message(), kTVOneStatusLine);
             screen.sendBuffer();
             
-            tvOne.increaseCommandPeriods(1000);
+            tvOne.increaseCommandPeriods(1500);
         }
         if (notOKCounter % 15 == 1)
         {
@@ -481,7 +481,10 @@ void actionMixMode()
         if (mixMode == mixBlend)    
         {
             // Turn off Additive Mixing on output
-            ok = tvOne.command(0, kTV1WindowIDA, 0x298, 0);
+            if (tvOne.getProcessorType().version == 423)
+            {
+                ok = tvOne.command(0, kTV1WindowIDA, 0x298, 0);
+            }
             snprintf(sentMSGBuffer, kStringBufferLength, "Blend");
         }
         if (mixMode == mixAdditive) 
@@ -489,7 +492,10 @@ void actionMixMode()
             // First set B to what you'd expect for additive; it may be left at 100 if optimised blend mixing was previous mixmode.
             ok =       tvOne.command(0, kTV1WindowIDB, kTV1FunctionAdjustWindowsMaxFadeLevel, fadeBPercent);
             // Then turn on Additive Mixing
-            ok = ok && tvOne.command(0, kTV1WindowIDA, 0x298, 1);
+            if (tvOne.getProcessorType().version == 423)
+            {
+                ok = ok && tvOne.command(0, kTV1WindowIDA, 0x298, 1);
+            }
             snprintf(sentMSGBuffer, kStringBufferLength, "Additive");
         }                
     }
@@ -498,7 +504,10 @@ void actionMixMode()
         int index = mixModeMenu.selectedIndex() - mixKeyStartIndex;
         
         // Turn off Additive Mixing on output
-        ok = tvOne.command(0, kTV1WindowIDA, 0x298, 0);
+        if (tvOne.getProcessorType().version == 423)
+        {
+            ok = tvOne.command(0, kTV1WindowIDA, 0x298, 0);
+        }
         // Turn on Keyer
         ok = ok && setKeyParamsTo(index);
         ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerEnable, true);
@@ -528,10 +537,13 @@ bool checkTVOneMixStatus()
     if (mixMode == mixAdditive) { additiveOn = true;  keyerOn = false;}
     if (mixMode >= mixKey)      { additiveOn = false; keyerOn = true; }
     
-    payload = -1;
-    ok = ok && tvOne.readCommand(0, kTV1WindowIDA, 0x298, payload);
-    if (payload != additiveOn) mixModeNeedsAction = true;
-
+    if (tvOne.getProcessorType().version == 423)
+    {
+        payload = -1;
+        ok = ok && tvOne.readCommand(0, kTV1WindowIDA, 0x298, payload);
+        if (payload != additiveOn) mixModeNeedsAction = true;
+    }
+    
     payload = -1;
     ok = ok && tvOne.readCommand(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerEnable, payload);
     if (payload != keyerOn) mixModeNeedsAction = true;
@@ -661,7 +673,7 @@ bool uploadToProcessor()
         file = fopen("/local/spark.dat", "r"); // 8.3, avoid .bin as mbed executable extension
         if (file)
         {
-            ok = ok && tvOne.uploadImage(file, 1);   
+            ok = ok && tvOne.uploadImage(file, 0);   
             fclose(file);
         }
         else
@@ -1137,6 +1149,8 @@ void troubleshootingMenuResetHandler(int menuChange, bool action)
             setMixModeMenuItems();
             setResolutionMenuItems();
             
+            tvOneStatusMessage.addMessage("Controller Reset", kTVOneStatusMessageHoldTime);
+            
             actionCount++;
         }
         else if (state == 1)
@@ -1164,7 +1178,7 @@ void troubleshootingMenuResetHandler(int menuChange, bool action)
         if (state == 0) 
         {
             screen.clearBufferRow(kMenuLine2);
-            screen.textToBuffer("Find MENU+STANDBY buttons", kMenuLine2);
+            screen.textToBuffer("Find MENU+STANDBY [NEXT]", kMenuLine2);
         }
         else if (state == 1)
         {
@@ -1182,7 +1196,7 @@ void troubleshootingMenuResetHandler(int menuChange, bool action)
         {
             screen.clearBufferRow(kMenuLine2);
             char messageBuffer[kStringBufferLength];
-            snprintf(messageBuffer, kStringBufferLength,"Hold buttons for [%i sec]", 15 - (timer.read_ms() / 1000));
+            snprintf(messageBuffer, kStringBufferLength,"Hold buttons for [%i s]", 15 - (timer.read_ms() / 1000));
             screen.textToBuffer(messageBuffer, kMenuLine2);
             screen.sendBuffer();
         }
@@ -1212,6 +1226,7 @@ void troubleshootingMenuResetHandler(int menuChange, bool action)
     }
     if (actionCount == 6)
     {
+        screen.clearBufferRow(kMenuLine2);
         screen.textToBuffer("3. No more steps [DONE]", kMenuLine2);
     }
     if (actionCount == 7)

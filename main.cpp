@@ -767,7 +767,7 @@ void mixModeAdditiveMenuHandler(int change, bool action)
 void troubleshootingMenuHDCPHandler(int change, bool action)
 {
     static int currentHDCP;
-    static unsigned int state = 1;
+    static int state = 0;
 
     if (change == 0 && !action)
     {
@@ -799,19 +799,21 @@ void troubleshootingMenuHDCPHandler(int change, bool action)
     }
     
     state += change;
+    if (state > 1) state = 1;
+    if (state < 0) state = 0;
     
     char paramLine[kStringBufferLength];
     screen.clearBufferRow(kMenuLine2);
     
     const char* current = currentHDCP == -1 ? "Mixed" : ( currentHDCP == 1 ? "On" : "Off");
     
-    if (state % 2) snprintf(paramLine, kStringBufferLength, "%s. Set: [%s/      ]?", current, currentHDCP == 0 ? "On " : "Off" );
+    if (state == 0) snprintf(paramLine, kStringBufferLength, "%s. Set: [%s/      ]?", current, currentHDCP == 0 ? "On " : "Off" );
     else           snprintf(paramLine, kStringBufferLength, "%s. Set: [   /Cancel]?", current);
     screen.textToBuffer(paramLine, kMenuLine2);
 
     if (action)
     {
-        if (state % 2)
+        if (state == 0)
         {
             screen.clearBufferRow(kTVOneStatusLine);
             screen.textToBuffer("Setting HDCP...", kTVOneStatusLine);
@@ -841,7 +843,7 @@ void troubleshootingMenuHDCPHandler(int change, bool action)
 void troubleshootingMenuEDIDHandler(int change, bool action)
 {
     static int currentEDIDPassthrough;
-    static unsigned int state = 1;
+    static int state = 0;
 
     if (change == 0 && !action)
     {
@@ -866,19 +868,21 @@ void troubleshootingMenuEDIDHandler(int change, bool action)
     }
     
     state += change;
+    if (state > 1) state = 1;
+    if (state < 0) state = 0;
         
     char paramLine[kStringBufferLength];
     screen.clearBufferRow(kMenuLine2);
     
     const char* current = currentEDIDPassthrough == -1 ? "Mixed" : ( currentEDIDPassthrough == 1 ? "Thru" : "Internal");
     
-    if (state % 2) snprintf(paramLine, kStringBufferLength, "%s. Set: [%s/      ]?", current, currentEDIDPassthrough == 0 ? "Thru" : "Int");
+    if (state == 0) snprintf(paramLine, kStringBufferLength, "%s. Set: [%s/      ]?", current, currentEDIDPassthrough == 0 ? "Thru" : "Int");
     else           snprintf(paramLine, kStringBufferLength, "%s. Set: [   /Cancel]?", current);      
     screen.textToBuffer(paramLine, kMenuLine2);
     
     if (action)
     {
-        if (state % 2)
+        if (state == 0)
         {
             screen.clearBufferRow(kTVOneStatusLine);
             screen.textToBuffer("Setting EDID...", kTVOneStatusLine);
@@ -915,7 +919,7 @@ void troubleshootingMenuEDIDHandler(int change, bool action)
 void mixModeUpdateKeyMenuHandler(int menuChange, bool action)
 {
     static int actionCount = 0;
-    static unsigned int state = 0;
+    static int state = 0;
     
     if (action) actionCount++;
     
@@ -926,7 +930,10 @@ void mixModeUpdateKeyMenuHandler(int menuChange, bool action)
         screen.textToBuffer("Edit current key?", kMenuLine1);
         
         state += menuChange;
-        switch (state % 3) 
+        if (state > 2) state = 2;
+        if (state < 0) state = 0;
+        
+        switch (state) 
         {
             case 0: screen.textToBuffer("[Tweak/          /      ]", kMenuLine2); break;
             case 1: screen.textToBuffer("[     /Start Over/      ]", kMenuLine2); break;
@@ -935,8 +942,6 @@ void mixModeUpdateKeyMenuHandler(int menuChange, bool action)
     }
     if (actionCount == 1)
     {
-        state = state % 3;
-        
         if (state == 0) 
         {
             settings.editingKeyerSetIndex = mixModeMenu.selectedIndex() - mixKeyStartIndex;
@@ -1116,7 +1121,7 @@ void mixModeUpdateKeyMenuHandler(int menuChange, bool action)
 void troubleshootingMenuResetHandler(int menuChange, bool action)
 {
     static int actionCount = 0;
-    static unsigned int state = 0;
+    static int state = 0;
     
     if (action) actionCount++;
     
@@ -1125,7 +1130,10 @@ void troubleshootingMenuResetHandler(int menuChange, bool action)
         screen.clearBufferRow(kMenuLine2);
         
         state += menuChange;
-        switch (state % 2) 
+        if (state > 1) state = 1;
+        if (state < 0) state = 0;
+        
+        switch (state) 
         {
             case 0: screen.textToBuffer("1. Controller [Reset/    ]", kMenuLine2); break;
             case 1: screen.textToBuffer("1. Controller [     /Skip]", kMenuLine2); break;
@@ -1133,8 +1141,6 @@ void troubleshootingMenuResetHandler(int menuChange, bool action)
     }
     if (actionCount == 1)
     {
-        state = state % 2;
-        
         if (state == 0) 
         {
             tvOneRGB1Stable = false;
@@ -1165,7 +1171,9 @@ void troubleshootingMenuResetHandler(int menuChange, bool action)
         screen.clearBufferRow(kMenuLine2);
         
         state += menuChange;
-        switch (state % 2) 
+        if (state > 1) state = 1;
+        if (state < 0) state = 0;
+        switch (state) 
         {
             case 0: screen.textToBuffer("2. Processor [Reset/    ]", kMenuLine2); break;
             case 1: screen.textToBuffer("2. Processor [     /Skip]", kMenuLine2); break;
@@ -1173,8 +1181,6 @@ void troubleshootingMenuResetHandler(int menuChange, bool action)
     }
     if (actionCount == 3)
     {
-        state = state % 2;
-        
         if (state == 0) 
         {
             screen.clearBufferRow(kMenuLine2);

@@ -102,6 +102,9 @@
 #define kOSCMbedGateway 10,0,0,1
 #define kOSCMbedDNS 10,0,0,1
 
+#define kOSCDestIPAddress 10,0,0,1
+#define kOSCDestPort 12000
+
 #define kArtNetBindIPAddress 2,0,0,100
 #define kArtNetBroadcastAddress 2,255,255,255
 
@@ -1554,6 +1557,10 @@ int main()
                     osc = new OSCClass();
                     osc->setReceiveMessage(&receiveMessage);
                     osc->begin(kOSCMbedPort);
+                    
+                    uint8_t destIP[]  = { kOSCDestIPAddress };
+                    sendMessage.setIp( destIP );
+                    sendMessage.setPort( kOSCDestPort );
                     
                     snprintf(commsStatusBuffer, kStringBufferLength, "Listening on %i", kOSCMbedPort);
                 }

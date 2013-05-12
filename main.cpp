@@ -42,6 +42,7 @@
  * v23 - Set keying values from controller
  * v24 - Conform uploads SIS image; now once firmware is loaded controller is all that is required
  * v25 - UX work
+ * v26 - Tweaks: Network in works better with hands-on controls, EDID Change message, Fit/Fill
  * vxx - TODO: Writes back to .ini on USB mass storage: keyer updates, comms, hdcp, edid internal/passthrough, ...?
  * vxx - TODO: EDID creation from resolution
  */
@@ -60,7 +61,7 @@
 #include "DMX.h"
 #include "filter.h"
 
-#define kSPKDFSoftwareVersion "25"
+#define kSPKDFSoftwareVersion "26beta"
 
 // MBED PINS
 
@@ -121,8 +122,8 @@
 //// DEBUG
 
 // Comment out one or the other...
-//Serial *debug = new Serial(USBTX, USBRX); // For debugging via USB serial
-Serial *debug = NULL; // For release (no debugging)
+Serial *debug = new Serial(USBTX, USBRX); // For debugging via USB serial
+//Serial *debug = NULL; // For release (no debugging)
 
 //// SOFT RESET
 
@@ -179,6 +180,7 @@ int commsMode = commsNone;
 SPKMenu troubleshootingMenu;
 SPKMenu troubleshootingMenuHDCP;
 SPKMenu troubleshootingMenuEDID;
+SPKMenu troubleshootingMenuAspect;
 SPKMenu troubleshootingMenuReset;
 
 SPKMenu advancedMenu;
@@ -218,7 +220,8 @@ bool tvOneRGB2Stable = false;
 bool tvOneHDCPOn = false;
 bool tvOneEDIDPassthrough = false;
 const int32_t EDIDPassthroughSlot = 7;
-
+enum { tvOneAspectFit = 1, tvOneAspectHFill = 2, tvOneAspectVFill = 3, tvOneAspect1to1 = 4 };
+int tvOneAspectHandling = tvOneAspectFit;
 
 void processOSCIn(float &xFade, float &fadeUp) {
     string statusMessage;
@@ -610,6 +613,7 @@ bool conformProcessor()
         ok = ok && tvOne.command(0, kTV1WindowIDB, kTV1FunctionAdjustWindowsShrinkEnable, off);
         ok = ok && tvOne.command(kTV1SourceRGB1, kTV1WindowIDA, kTV1FunctionAdjustSourceAspectCorrect, fit);
         ok = ok && tvOne.command(kTV1SourceRGB2, kTV1WindowIDA, kTV1FunctionAdjustSourceAspectCorrect, fit);
+        // TODO: Check why SIS1 is missing, tvone quirk or coding oversight?
         ok = ok && tvOne.command(kTV1SourceSIS2, kTV1WindowIDA, kTV1FunctionAdjustSourceTestCard, 1);
         ok = ok && tvOne.command(kTV1SourceSIS2, kTV1WindowIDA, kTV1FunctionAdjustSourceAspectCorrect, oneToOne);
         
@@ -906,6 +910,97 @@ void troubleshootingMenuEDIDHandler(int change, bool action)
             std::string sendOK = ok ? "Sent: EDID " : "Send Error: EDID ";
             sendOK += tvOneEDIDPassthrough ? "Passthrough" : "Internal";
             
+            tvOneStatusMessage.addMessage(sendOK, kTVOneStatusMessageHoldTime);
+        }
+            
+        // Get back to menu
+        selectedMenu = &troubleshootingMenu;
+        
+        screen.clearBufferRow(kMenuLine1);
+        screen.clearBufferRow(kMenuLine2);
+        screen.textToBuffer(selectedMenu->title, kMenuLine1);
+        screen.textToBuffer(selectedMenu->selectedString(), kMenuLine2);
+    }
+}
+
+void troubleshootingMenuAspectHandler(int change, bool action)
+{
+    static int state = 0;
+
+    if (change == 0 && !action)
+    {
+        int32_t payload1 = -1;
+        tvOne.readCommand(kTV1SourceRGB1, kTV1WindowIDA, kTV1FunctionAdjustSourceAspectCorrect, payload1);
+      
+        int32_t payload2 = -1;
+        tvOne.readCommand(kTV1SourceRGB2, kTV1WindowIDA, kTV1FunctionAdjustSourceAspectCorrect, payload2);
+        
+        if ((payload1 == payload2) && (payload2 == tvOneAspectFit)) 
+        {
+            state = 0;
+        }
+        else if ((payload1 == payload2) && (payload2 == tvOneAspectHFill))
+        {
+            state = 1;
+        }
+        else if ((payload1 == payload2) && (payload2 == tvOneAspectVFill)) 
+        {
+            state = 1;
+        }
+        else if ((payload1 == payload2) && (payload2 == tvOneAspect1to1))
+        {
+            state = 2;
+        }
+        else
+        {
+            state = 0;
+        }
+    }
+    
+    state += change;
+    if (state > 3) state = 3;
+    if (state < 0) state = 0;
+    
+    screen.clearBufferRow(kMenuLine2);
+    switch (state) 
+    {
+        case 0: screen.textToBuffer("Set: [Fit/    /   /      ]", kMenuLine2); break;
+        case 1: screen.textToBuffer("Set: [   /Fill/   /      ]", kMenuLine2); break;
+        case 2: screen.textToBuffer("Set: [   /    /1:1/      ]", kMenuLine2); break;
+        case 3: screen.textToBuffer("Set: [   /    /   /Cancel]", kMenuLine2); break;
+    }
+      
+    if (action)
+    {
+        if (state != 3)
+        {
+            screen.clearBufferRow(kTVOneStatusLine);
+            screen.textToBuffer("Setting Aspect...", kTVOneStatusLine);
+            screen.sendBuffer();
+        
+            // Do the action
+            switch (state) 
+            {
+                case 0: tvOneAspectHandling = tvOneAspectFit; break;
+                case 1: tvOneAspectHandling = tvOneAspectHFill; break;
+                case 2: tvOneAspectHandling = tvOneAspect1to1; break;
+            }
+            
+            bool ok = true;
+            
+            ok = ok && tvOne.command(kTV1SourceRGB1, kTV1WindowIDA, kTV1FunctionAdjustSourceAspectCorrect, tvOneAspectHandling);
+            ok = ok && tvOne.command(kTV1SourceRGB2, kTV1WindowIDA, kTV1FunctionAdjustSourceAspectCorrect, tvOneAspectHandling);
+            
+            if (ok) tvOne.command(0, kTV1WindowIDA, kTV1FunctionPowerOnPresetStore, 1);
+            
+            std::string sendOK = ok ? "Sent: " : "Send Error: ";
+            switch (tvOneAspectHandling) 
+            {
+                case tvOneAspectFit: sendOK += "Aspect Fit "; break;
+                case tvOneAspectHFill: sendOK += "Aspect Fill"; break;
+                case tvOneAspectVFill: sendOK += "Aspect Fill"; break;
+                case tvOneAspect1to1: sendOK += "Aspect 1:1"; break;
+            }
             tvOneStatusMessage.addMessage(sendOK, kTVOneStatusMessageHoldTime);
         }
             
@@ -1289,7 +1384,7 @@ int main()
     mixModeAdditiveMenu.addMenuItem(SPKMenuItem(&mixModeAdditiveMenuHandler));
 
     mixModeUpdateKeyMenu.title = "Update Keyer Settings?";
-    mixModeUpdateKeyMenu.addMenuItem(SPKMenuItem(mixModeUpdateKeyMenuHandler));
+    mixModeUpdateKeyMenu.addMenuItem(SPKMenuItem(&mixModeUpdateKeyMenuHandler));
 
     resolutionMenu.title = "Resolution";
     setResolutionMenuItems();
@@ -1306,8 +1401,11 @@ int main()
     troubleshootingMenuHDCP.addMenuItem(SPKMenuItem(&troubleshootingMenuHDCPHandler));
     troubleshootingMenu.addMenuItem(SPKMenuItem(troubleshootingMenuHDCP.title, &troubleshootingMenuHDCP));
     troubleshootingMenuEDID.title = "EDID - Advertises Res's";
-    troubleshootingMenuEDID.addMenuItem(SPKMenuItem(troubleshootingMenuEDIDHandler));
+    troubleshootingMenuEDID.addMenuItem(SPKMenuItem(&troubleshootingMenuEDIDHandler));
     troubleshootingMenu.addMenuItem(SPKMenuItem(troubleshootingMenuEDID.title, &troubleshootingMenuEDID));
+    troubleshootingMenuAspect.title = "Aspect - Mismatched Res";
+    troubleshootingMenuAspect.addMenuItem(SPKMenuItem(&troubleshootingMenuAspectHandler));
+    troubleshootingMenu.addMenuItem(SPKMenuItem(troubleshootingMenuAspect.title, &troubleshootingMenuAspect));
     troubleshootingMenuReset.title = "Output - Mixing Wrong";
     troubleshootingMenuReset.addMenuItem(SPKMenuItem(&troubleshootingMenuResetHandler));
     troubleshootingMenu.addMenuItem(SPKMenuItem(troubleshootingMenuReset.title, &troubleshootingMenuReset));

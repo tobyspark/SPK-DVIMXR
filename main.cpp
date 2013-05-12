@@ -122,8 +122,8 @@
 //// DEBUG
 
 // Comment out one or the other...
-Serial *debug = new Serial(USBTX, USBRX); // For debugging via USB serial
-//Serial *debug = NULL; // For release (no debugging)
+//Serial *debug = new Serial(USBTX, USBRX); // For debugging via USB serial
+Serial *debug = NULL; // For release (no debugging)
 
 //// SOFT RESET
 
@@ -586,8 +586,6 @@ bool conformProcessor()
                     
     int32_t on = 1;
     int32_t off = 0;
-    int32_t fit = 1;
-    int32_t oneToOne = 4;
     
     for (int i=0; i < 3; i++)
     {
@@ -611,11 +609,12 @@ bool conformProcessor()
         ok = ok && tvOne.command(0, kTV1WindowIDB, kTV1FunctionAdjustWindowsZoomLevel, 100);
         ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustWindowsShrinkEnable, off);
         ok = ok && tvOne.command(0, kTV1WindowIDB, kTV1FunctionAdjustWindowsShrinkEnable, off);
-        ok = ok && tvOne.command(kTV1SourceRGB1, kTV1WindowIDA, kTV1FunctionAdjustSourceAspectCorrect, fit);
-        ok = ok && tvOne.command(kTV1SourceRGB2, kTV1WindowIDA, kTV1FunctionAdjustSourceAspectCorrect, fit);
-        // TODO: Check why SIS1 is missing, tvone quirk or coding oversight?
+        ok = ok && tvOne.command(kTV1SourceRGB1, kTV1WindowIDA, kTV1FunctionAdjustSourceAspectCorrect, tvOneAspectFit);
+        ok = ok && tvOne.command(kTV1SourceRGB2, kTV1WindowIDA, kTV1FunctionAdjustSourceAspectCorrect, tvOneAspectFit);
+        ok = ok && tvOne.command(kTV1SourceSIS1, kTV1WindowIDA, kTV1FunctionAdjustSourceTestCard, 1);
+        ok = ok && tvOne.command(kTV1SourceSIS1, kTV1WindowIDA, kTV1FunctionAdjustSourceAspectCorrect, tvOneAspect1to1);
         ok = ok && tvOne.command(kTV1SourceSIS2, kTV1WindowIDA, kTV1FunctionAdjustSourceTestCard, 1);
-        ok = ok && tvOne.command(kTV1SourceSIS2, kTV1WindowIDA, kTV1FunctionAdjustSourceAspectCorrect, oneToOne);
+        ok = ok && tvOne.command(kTV1SourceSIS2, kTV1WindowIDA, kTV1FunctionAdjustSourceAspectCorrect, tvOneAspect1to1);
         
         // On source loss, hold on the last frame received.
         int32_t freeze = 1;
@@ -623,7 +622,7 @@ bool conformProcessor()
         ok = ok && tvOne.command(kTV1SourceRGB2, kTV1WindowIDA, kTV1FunctionAdjustSourceOnSourceLoss, freeze);
         
         // Set resolution and fade levels for maximum chance of being seen
-        ok = ok && tvOne.setResolution(kTV1ResolutionVGA, tvOneEDIDPassthrough ? EDIDPassthroughSlot : 5);
+        ok = ok && tvOne.setResolution(kTV1ResolutionVGA, 5);
         ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustWindowsMaxFadeLevel, 50);
         ok = ok && tvOne.command(0, kTV1WindowIDB, kTV1FunctionAdjustWindowsMaxFadeLevel, 100);
         

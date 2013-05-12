@@ -6,6 +6,7 @@
 
 #include <string>
 #include <vector>
+#include <queue>
 
 class SPKIndexInRange {
 public:
@@ -203,36 +204,56 @@ public:
     SPKMessageHold() {
         holding = false;
         currentMessage = "";
-        waitingMessage = "";
+        savedMessage = "";
     }
     
-    void addMessage(string message, float minimumSeconds) {
-        if (minimumSeconds > 0.0f)
+    void addMessage(string message, float minimumSeconds) 
+    {
+        if (holding)
         {
-            timeout.detach();
-            timeout.attach(this, &SPKMessageHold::handleTimeout, minimumSeconds);
-            holding = true;
-            waitingMessage = currentMessage;
-            currentMessage = message;
+            if (minimumSeconds > 0.0f)  enqueuedMessages.push( make_pair(message, minimumSeconds) );
+            else                        savedMessage = message;
         }
         else
         {
-            if (holding) waitingMessage = message;
-            else currentMessage = message;
+            if (minimumSeconds > 0.0f)
+            {
+                timeout.detach();
+                timeout.attach(this, &SPKMessageHold::handleTimeout, minimumSeconds);
+                holding = true;
+                savedMessage = currentMessage;
+                currentMessage = message;
+            }
+            else
+            {
+                currentMessage = message;
+            }
         }
     }
     
     string message() { return currentMessage; }
 
 private:
-    void handleTimeout() {
-        currentMessage = waitingMessage;
-        waitingMessage = "";
-        holding = false;
+    void handleTimeout() 
+    {
+        if (enqueuedMessages.empty())
+        {
+            currentMessage = savedMessage;
+            holding = false;
+        }
+        else
+        {
+            currentMessage = enqueuedMessages.front().first;
+            float secs = enqueuedMessages.front().second;
+            enqueuedMessages.pop();
+            
+            timeout.attach(this, &SPKMessageHold::handleTimeout, secs);
+        }
     }
     
     bool holding;
     string currentMessage;
-    string waitingMessage;
+    string savedMessage;
+    queue< pair<string, float> >enqueuedMessages;
     Timeout timeout;
 };

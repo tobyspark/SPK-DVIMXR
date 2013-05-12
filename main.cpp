@@ -849,28 +849,15 @@ void troubleshootingMenuHDCPHandler(int change, bool action)
 void troubleshootingMenuEDIDHandler(int change, bool action)
 {
     static int currentEDIDPassthrough;
+    static int currentEDID;
     static int state = 0;
-
+    
     if (change == 0 && !action)
     {
-        int32_t payload1 = -1;
-        tvOne.readCommand(kTV1SourceRGB1, kTV1WindowIDA, kTV1FunctionAdjustSourceEDID, payload1);
+        currentEDID = tvOne.getEDID();
         
-        int32_t payload2 = -1;
-        tvOne.readCommand(kTV1SourceRGB2, kTV1WindowIDA, kTV1FunctionAdjustSourceEDID, payload2);
-        
-        if ((payload1 == payload2) && (payload2 == EDIDPassthroughSlot)) 
-        {
-            currentEDIDPassthrough = 1;
-        }
-        else if ((payload1 == payload2) && (payload2 != EDIDPassthroughSlot))
-        {
-            currentEDIDPassthrough = 0;
-        }
-        else
-        {
-            currentEDIDPassthrough = -1;
-        }
+        if (currentEDID == -1) currentEDIDPassthrough = -1;
+        else currentEDIDPassthrough = (currentEDID == EDIDPassthroughSlot) ? 1 : 0;
     }
     
     state += change;
@@ -898,18 +885,25 @@ void troubleshootingMenuEDIDHandler(int change, bool action)
             tvOneEDIDPassthrough = currentEDIDPassthrough == 0;
             
             bool ok = true;
+            std::string message;
             
-            int32_t slot = tvOneEDIDPassthrough ? EDIDPassthroughSlot : resolutionMenu.selectedItem().payload.command[1];
+            int newEDID = tvOneEDIDPassthrough ? EDIDPassthroughSlot : resolutionMenu.selectedItem().payload.command[1];
+            
+            if (newEDID != currentEDID)
+            {
+                ok = ok && tvOne.command(kTV1SourceRGB1, kTV1WindowIDA, kTV1FunctionAdjustSourceEDID, newEDID);
+                ok = ok && tvOne.command(kTV1SourceRGB2, kTV1WindowIDA, kTV1FunctionAdjustSourceEDID, newEDID);
+                if (ok) message = "Sent: EDID";
+                else    message = "Send Error: EDID";
+            }
+            else        message = "EDID already set";
         
-            ok = ok && tvOne.command(kTV1SourceRGB1, kTV1WindowIDA, kTV1FunctionAdjustSourceEDID, slot);
-            ok = ok && tvOne.command(kTV1SourceRGB2, kTV1WindowIDA, kTV1FunctionAdjustSourceEDID, slot);
-            
             if (ok) tvOne.command(0, kTV1WindowIDA, kTV1FunctionPowerOnPresetStore, 1);
             
-            std::string sendOK = ok ? "Sent: EDID " : "Send Error: EDID ";
-            sendOK += tvOneEDIDPassthrough ? "Passthrough" : "Internal";
+            tvOneStatusMessage.addMessage(message, kTVOneStatusMessageHoldTime);
             
-            tvOneStatusMessage.addMessage(sendOK, kTVOneStatusMessageHoldTime);
+            // This is WHACK. Can't believe it's both needed and officially in the 1T-C2-750 manual
+            if ((newEDID != currentEDID) && ok) tvOneStatusMessage.addMessage("EDID: Processor Off+On?", kTVOneStatusMessageHoldTime);
         }
             
         // Get back to menu
@@ -1580,21 +1574,25 @@ int main()
                 screen.sendBuffer();
                 
                 bool ok;
-                int32_t slot = tvOneEDIDPassthrough ? EDIDPassthroughSlot : resolutionMenu.selectedItem().payload.command[1];
+                int oldEDID = tvOne.getEDID();
+                int newEDID = tvOneEDIDPassthrough ? EDIDPassthroughSlot : resolutionMenu.selectedItem().payload.command[1];
                 
-                ok = tvOne.setResolution(resolutionMenu.selectedItem().payload.command[0], slot);
+                ok = tvOne.setResolution(resolutionMenu.selectedItem().payload.command[0], newEDID);
                 
                 // Save new resolution and EDID into TV One unit for power-on. Cycling TV One power sometimes needed for EDID. Pffft.
                 if (ok) tvOne.command(0, kTV1WindowIDA, kTV1FunctionPowerOnPresetStore, 1);
                 
-                string sentOK;
-                if (ok) sentOK = "Sent: ";
-                else sentOK = "Send Error: ";
+                string message;
+                if (ok)
+                {
+                    if (oldEDID == newEDID) message = "Sent: Resolution";
+                    else                    message = "Sent: Resolution + EDID";
+                }
+                else                        message = "Send Error: Resolution";
+                tvOneStatusMessage.addMessage(message, kTVOneStatusMessageHoldTime);
                 
-                char sentMSGBuffer[kStringBufferLength];
-                snprintf(sentMSGBuffer, kStringBufferLength,"Res %i, EDID %i", resolutionMenu.selectedItem().payload.command[0], resolutionMenu.selectedItem().payload.command[1]);
-                
-                tvOneStatusMessage.addMessage(sentOK + sentMSGBuffer, kTVOneStatusMessageHoldTime);
+                // This is WHACK. Can't believe it's both needed and officially in the 1T-C2-750 manual
+                if ((oldEDID != newEDID) && ok) tvOneStatusMessage.addMessage("EDID: Processor Off+On?", kTVOneStatusMessageHoldTime);
                 
                 if (debug) { debug->printf("Changing resolution"); }
             }

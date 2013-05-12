@@ -42,7 +42,7 @@
  * v23 - Set keying values from controller
  * v24 - Conform uploads SIS image; now once firmware is loaded controller is all that is required
  * v25 - UX work
- * v26 - Tweaks: Network in works better with hands-on controls, EDID Change message, Fit/Fill
+ * v26 - Tweaks: Network in works with hands-on controls, EDID Change message, Fit/Fill
  * vxx - TODO: Writes back to .ini on USB mass storage: keyer updates, comms, hdcp, edid internal/passthrough, ...?
  * vxx - TODO: EDID creation from resolution
  */
@@ -209,6 +209,13 @@ int oldFadeBPercent = 0;
 // Tap button states
 bool tapLeftWasFirstPressed = false;
 
+// Comms In fade state
+float commsXFade = 0;
+float commsFadeUp = 0;
+float oldXFade = 0;
+float oldFadeUp = 0;
+bool  commsInActive = false;
+
 // Key mode parameters
 int keyerParamsSet = -1; // last keyParams index uploaded to unit 
 
@@ -223,81 +230,106 @@ const int32_t EDIDPassthroughSlot = 7;
 enum { tvOneAspectFit = 1, tvOneAspectHFill = 2, tvOneAspectVFill = 3, tvOneAspect1to1 = 4 };
 int tvOneAspectHandling = tvOneAspectFit;
 
-void processOSCIn(float &xFade, float &fadeUp) {
-    string statusMessage;
-    
-    if (!strcmp( receiveMessage.getTopAddress() , "dvimxr" )) 
+bool processOSCIn() 
+{
+    bool updateFade = false;
+
+    if (osc->newMessage) 
     {
-        statusMessage = "OSC: /dvimxr";
-        if (!strcmp( receiveMessage.getSubAddress() , "xFade" )) 
+        osc->newMessage = false; // fixme!
+        
+        string statusMessage;
+        
+        if (!strcmp( receiveMessage.getTopAddress() , "dvimxr" )) 
         {
-            if (receiveMessage.getArgNum() == 1)
-                if (receiveMessage.getTypeTag(0) == 'f')
-                {
-                    xFade = receiveMessage.getArgFloat(0);
-                    char buffer[15];
-                    snprintf(buffer, kStringBufferLength, "/xFade %1.2f", xFade);
-                    statusMessage += buffer;
-                }
+            statusMessage = "OSC: /dvimxr";
+            if (!strcmp( receiveMessage.getSubAddress() , "xFade" )) 
+            {
+                if (receiveMessage.getArgNum() == 1)
+                    if (receiveMessage.getTypeTag(0) == 'f')
+                    {
+                        commsXFade = receiveMessage.getArgFloat(0);
+                        updateFade = true;
+                        
+                        char buffer[15];
+                        snprintf(buffer, 15, "/xFade %1.2f", commsXFade);
+                        statusMessage += buffer;
+                    }
+            }
+            else if (!strcmp( receiveMessage.getSubAddress() , "fadeUp" ))
+            {
+                if (receiveMessage.getArgNum() == 1)
+                    if (receiveMessage.getTypeTag(0) == 'f')
+                    {
+                        commsFadeUp = receiveMessage.getArgFloat(0);
+                        updateFade = true;
+                        
+                        char buffer[15];
+                        snprintf(buffer, 15, "/fadeUp %1.2f", commsFadeUp);
+                        statusMessage += buffer;
+                    }
+            }
+            else 
+            {
+                statusMessage += receiveMessage.getSubAddress();
+                statusMessage += " - Ignoring";
+            }
         }
-        else if (!strcmp( receiveMessage.getSubAddress() , "fadeUp" ))
+        else
         {
-            if (receiveMessage.getArgNum() == 1)
-                if (receiveMessage.getTypeTag(0) == 'f')
-                {
-                    fadeUp = receiveMessage.getArgFloat(0);
-                    char buffer[15];
-                    snprintf(buffer, kStringBufferLength, "/fadeUp %1.2f", fadeUp);
-                    statusMessage += buffer;
-                }
-        }
-        else 
-        {
-            statusMessage += receiveMessage.getSubAddress();
+            statusMessage = "OSC: ";
+            statusMessage += receiveMessage.getTopAddress();
             statusMessage += " - Ignoring";
         }
-    }
-    else
-    {
-        statusMessage = "OSC: ";
-        statusMessage += receiveMessage.getTopAddress();
-        statusMessage += " - Ignoring";
+        
+        screen.clearBufferRow(kCommsStatusLine);
+        screen.textToBuffer(statusMessage, kCommsStatusLine);
+    
+        if (debug) debug->printf("%s \r\n", statusMessage.c_str());
     }
     
-    screen.clearBufferRow(kCommsStatusLine);
-    screen.textToBuffer(statusMessage, kCommsStatusLine);
-
-    if (debug) debug->printf("%s \r\n", statusMessage.c_str());
-    
+    return updateFade;
 }
 
-void processOSCOut(float &xFade, float &fadeUp) 
+void processOSCOut(const float &xFade, const float &fadeUp) 
 {
-    char statusMessageBuffer[kStringBufferLength];
-
     sendMessage.setAddress("dvimxr", "xFadeFadeUp");
     sendMessage.setArgs("ff", &xFade, &fadeUp);
     osc->sendOsc(&sendMessage);
     
-    screen.clearBufferRow(kCommsStatusLine);
+    char statusMessageBuffer[kStringBufferLength];
     snprintf(statusMessageBuffer, kStringBufferLength, "OSC Out: xF %.2f fUp %.2f", xFade, fadeUp);
+    screen.clearBufferRow(kCommsStatusLine);
     screen.textToBuffer(statusMessageBuffer, kCommsStatusLine);
 
     if (debug) debug->printf(statusMessageBuffer);
 }
 
-void processArtNetIn(float &xFade, float &fadeUp) 
+bool processArtNetIn() 
 {
-    screen.clearBufferRow(kCommsStatusLine);
-    screen.textToBuffer("ArtNet activity", kCommsStatusLine);
-
-    if (debug) debug->printf("ArtNet activity");
+    if (artNet->Work()) 
+    {
+        int xFadeDMX = artNet->DmxIn[0][0];
+        int fadeUpDMX = artNet->DmxIn[0][1];
+    
+        commsXFade  = (float)xFadeDMX/255;
+        commsFadeUp = (float)fadeUpDMX/255;
+    
+        char statusMessageBuffer[kStringBufferLength];
+        snprintf(statusMessageBuffer, kStringBufferLength, "A'Net In: xF%3i fUp %3i", xFadeDMX, fadeUpDMX);
+        screen.clearBufferRow(kCommsStatusLine);
+        screen.textToBuffer(statusMessageBuffer, kCommsStatusLine);
+    
+        if (debug) debug->printf("ArtNet activity");
+        
+        return true;
+    }
+    
+    return false;
 }
 
-void processArtNetOut(float &xFade, float &fadeUp) 
+void processArtNetOut(const float &xFade, const float &fadeUp) 
 {
-    char statusMessageBuffer[kStringBufferLength];
-
     int xFadeDMX = xFade*255;
     int fadeUpDMX = fadeUp*255;
     
@@ -305,42 +337,48 @@ void processArtNetOut(float &xFade, float &fadeUp)
     char dmxData[2] = {xFadeDMX, fadeUpDMX};
     artNet->Send_ArtDmx(0, 0, dmxData, 2);
     
-    screen.clearBufferRow(kCommsStatusLine);
+    char statusMessageBuffer[kStringBufferLength];
     snprintf(statusMessageBuffer, kStringBufferLength, "A'Net Out: xF%3i fUp %3i", xFadeDMX, fadeUpDMX);
+    screen.clearBufferRow(kCommsStatusLine);
     screen.textToBuffer(statusMessageBuffer, kCommsStatusLine);
 
     if (debug) debug->printf(statusMessageBuffer);
 }
 
-void processDMXIn(float &xFade, float &fadeUp) 
+bool processDMXIn() 
 {
-    char statusMessageBuffer[kStringBufferLength];
-
     int xFadeDMX = dmx->get(kDMXInChannelXFade);
     int fadeUpDMX = dmx->get(kDMXInChannelFadeUp);
 
-    xFade = (float)xFadeDMX/255;
-    fadeUp = (float)fadeUpDMX/255;
-
-    screen.clearBufferRow(kCommsStatusLine);
-    snprintf(statusMessageBuffer, kStringBufferLength, "DMX In: xF %3i fUp %3i", xFadeDMX, fadeUpDMX);
-    screen.textToBuffer(statusMessageBuffer, kCommsStatusLine);
-
-    if (debug) debug->printf(statusMessageBuffer);
+    if (((float)xFadeDMX/255 != commsXFade) && ((float)fadeUpDMX/255 != commsFadeUp))
+    {
+        commsXFade = (float)xFadeDMX/255;
+        commsFadeUp = (float)fadeUpDMX/255;
+    
+        char statusMessageBuffer[kStringBufferLength];
+        snprintf(statusMessageBuffer, kStringBufferLength, "DMX In: xF %3i fUp %3i", xFadeDMX, fadeUpDMX);
+        screen.clearBufferRow(kCommsStatusLine);
+        screen.textToBuffer(statusMessageBuffer, kCommsStatusLine);
+    
+        if (debug) debug->printf(statusMessageBuffer);
+        
+        return true;
+    }
+    
+    return false;
 }
 
-void processDMXOut(float &xFade, float &fadeUp) 
+void processDMXOut(const float &xFade, const float &fadeUp) 
 {
-    char statusMessageBuffer[kStringBufferLength];
-
     int xFadeDMX = xFade*255;
     int fadeUpDMX = fadeUp*255;
     
     dmx->put(kDMXOutChannelXFade, xFadeDMX);
     dmx->put(kDMXOutChannelFadeUp, fadeUpDMX);
     
-    screen.clearBufferRow(kCommsStatusLine);
+    char statusMessageBuffer[kStringBufferLength];
     snprintf(statusMessageBuffer, kStringBufferLength, "DMX Out: xF %3i fUp %3i", xFadeDMX, fadeUpDMX);
+    screen.clearBufferRow(kCommsStatusLine);
     screen.textToBuffer(statusMessageBuffer, kCommsStatusLine);
 
     if (debug) debug->printf(statusMessageBuffer);
@@ -1793,31 +1831,39 @@ int main()
 
         fadeUp = 1.0 - fadeCalc(fadeUpAINCached, fadeUpTolerance);
 
-        //// TASK: Process Network Comms In, ie. modify TVOne state
-        if (commsMode == commsOSC)
+        //// TASK: Process Network Comms In, allowing hands-on controls to override
+        if ((commsMode == commsOSC) || (commsMode == commsArtNet) || (commsMode == commsDMXIn))
         {
-            if (osc->newMessage) 
+            bool commsIn = false;
+        
+            switch (commsMode)
             {
-                osc->newMessage = false; // fixme!
-                processOSCIn(xFade, fadeUp);
+                case commsOSC:      commsIn = processOSCIn(); break;
+                case commsArtNet:   commsIn = processArtNetIn(); break;
+                case commsDMXIn:    commsIn = processDMXIn(); break;
+            }
+        
+            if (commsIn)
+            {
+                // Store hands-on control positions to compare for change later
+                commsInActive = true;
+                oldXFade = xFade;
+                oldFadeUp = fadeUp;
+            }
+            else if (commsInActive)
+            {
+                // If no comms in update this loop, hold to the last unless hands-on controls have moved significantly
+                bool movement = (fabs(oldXFade-xFade) > 0.1) || (fabs(oldFadeUp-fadeUp) > 0.1);
+                if (movement) commsInActive = false;
+            }
+        
+            if (commsInActive)
+            {
+                xFade = commsXFade;
+                fadeUp = commsFadeUp;   
             }
         }
 
-        if (commsMode == commsArtNet)
-        {
-            if (artNet->Work()) processArtNetIn(xFade, fadeUp);
-        }
-
-        if (commsMode == commsDMXIn)
-        {
-            processDMXIn(xFade, fadeUp);
-        }
-
-        if (commsMode == commsDMXOut)
-        {
-            processDMXOut(xFade, fadeUp);
-        }
-        
         // Calculate new A&B fade percents
         int newFadeAPercent = 0;
         int newFadeBPercent = 0;

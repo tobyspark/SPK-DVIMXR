@@ -10,9 +10,15 @@
 #
 # Name = What is shown in menu
 # MinY...MaxV = As per TVOne keyer settings. 
-# Note these are super sensitive, one laptop will have slightly different numbers to another to acheive otherwise the same -- ie. pure blue -- key.
+# Note these are super sensitive, one laptop will have slightly different 
+#  numbers to another to achieve otherwise the same -- ie. pure blue -- key.
 #
-# Keying advice from the 1T-C2-750 Manual: The Min/Max parameters are used to select what range of Y (luminance/grey-scale) values are made transparent within the selected window/lock source. In order to key out part of an image, start with the max value and increase it until the required lighter parts within the window/lock source disappear. Then adjust the min level to bring back any darker parts of the image.
+# Keying advice from the 1T-C2-750 Manual: The Min/Max parameters are used to 
+# select what range of Y (luminance/grey-scale) values are made transparent 
+# within the selected window/lock source. In order to key out part of an image, 
+# start with the max value and increase it until the required lighter parts 
+# within the window/lock source disappear. Then adjust the min level to bring 
+# back any darker parts of the image.
 
 [Key1]
 Name = Lumakey
@@ -34,7 +40,7 @@ MaxV = 121
 
 # Edit the above, or add your own keys here, up to Key99
 
-### RESOLUTIONS
+### RESOLUTIONS
 #
 # Name = What is shown in menu
 # Number = Resolution number in TVOne. ie. what would be set in Menu > Outputs > Set Resolution
@@ -71,28 +77,50 @@ Number = 115
 EDIDNumber = 6
 
 [Resolution6]
-Name = HD 720P60 (1280x720)
-Number = 46
+Name = HD 720P24 (1280x720)
+Number = 40
 EDIDNumber = 5
 
 [Resolution7]
+Name = HD 720P50 (1280x720)
+Number = 44
+EDIDNumber = 5
+
+[Resolution8]
+Name = HD 720P60 (1280x720)
+Number = 48
+EDIDNumber = 5
+
+[Resolution9]
+Name = HD 1080P24 (1920x1080)
+Number = 101
+EDIDNumber = 5
+
+[Resolution10]
+Name = HD 1080P50 (1920x1080)
+Number = 106
+EDIDNumber = 5
+
+[Resolution11]
 Name = HD 1080P60 (1920x1080)
 Number = 109
 EDIDNumber = 5
 
-[Resolution8]
+[Resolution12]
 Name = Dual head SVGA (1600x600)
 Number = 75
 EDIDNumber = 3
 
-[Resolution9]
+[Resolution13]
 Name = Dual head XGA (2048x768)
 Number = 123
 EDIDNumber = 3
 
-[Resolution10]
+[Resolution14]
 Name = Triple head VGA (1920x480)
 Number = 90
 EDIDNumber = 3
 
 # Edit the above, or add your own keys here, up to Resolution99
+
+# End of SPKDF.ini -- Ensure there is a blank line below this.

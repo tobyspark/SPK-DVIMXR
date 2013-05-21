@@ -61,7 +61,7 @@
 #include "DMX.h"
 #include "filter.h"
 
-#define kSPKDFSoftwareVersion "26beta"
+#define kSPKDFSoftwareVersion "26"
 
 // MBED PINS
 

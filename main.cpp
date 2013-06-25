@@ -43,6 +43,8 @@
  * v24 - Conform uploads SIS image; now once firmware is loaded controller is all that is required
  * v25 - UX work
  * v26 - Tweaks: Network in works with hands-on controls, EDID Change message, Fit/Fill
+ * vxx - TODO: Rework Keying UX, having current key saved in processor and loading in presets.
+ * vxx - TODO: Reads OSC and ArtNet network info from .ini
  * vxx - TODO: Writes back to .ini on USB mass storage: keyer updates, comms, hdcp, edid internal/passthrough, ...?
  * vxx - TODO: EDID creation from resolution
  */
@@ -227,8 +229,6 @@ bool tvOneRGB2Stable = false;
 bool tvOneHDCPOn = false;
 bool tvOneEDIDPassthrough = false;
 const int32_t EDIDPassthroughSlot = 7;
-enum { tvOneAspectFit = 1, tvOneAspectHFill = 2, tvOneAspectVFill = 3, tvOneAspect1to1 = 4 };
-int tvOneAspectHandling = tvOneAspectFit;
 
 bool processOSCIn() 
 {
@@ -647,12 +647,12 @@ bool conformProcessor()
         ok = ok && tvOne.command(0, kTV1WindowIDB, kTV1FunctionAdjustWindowsZoomLevel, 100);
         ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustWindowsShrinkEnable, off);
         ok = ok && tvOne.command(0, kTV1WindowIDB, kTV1FunctionAdjustWindowsShrinkEnable, off);
-        ok = ok && tvOne.command(kTV1SourceRGB1, kTV1WindowIDA, kTV1FunctionAdjustSourceAspectCorrect, tvOneAspectFit);
-        ok = ok && tvOne.command(kTV1SourceRGB2, kTV1WindowIDA, kTV1FunctionAdjustSourceAspectCorrect, tvOneAspectFit);
+        ok = ok && tvOne.command(kTV1SourceRGB1, kTV1WindowIDA, kTV1FunctionAdjustSourceAspectCorrect, SPKTVOne::aspectFit);
+        ok = ok && tvOne.command(kTV1SourceRGB2, kTV1WindowIDA, kTV1FunctionAdjustSourceAspectCorrect, SPKTVOne::aspectFit);
         ok = ok && tvOne.command(kTV1SourceSIS1, kTV1WindowIDA, kTV1FunctionAdjustSourceTestCard, 1);
-        ok = ok && tvOne.command(kTV1SourceSIS1, kTV1WindowIDA, kTV1FunctionAdjustSourceAspectCorrect, tvOneAspect1to1);
+        ok = ok && tvOne.command(kTV1SourceSIS1, kTV1WindowIDA, kTV1FunctionAdjustSourceAspectCorrect, SPKTVOne::aspect1to1);
         ok = ok && tvOne.command(kTV1SourceSIS2, kTV1WindowIDA, kTV1FunctionAdjustSourceTestCard, 1);
-        ok = ok && tvOne.command(kTV1SourceSIS2, kTV1WindowIDA, kTV1FunctionAdjustSourceAspectCorrect, tvOneAspect1to1);
+        ok = ok && tvOne.command(kTV1SourceSIS2, kTV1WindowIDA, kTV1FunctionAdjustSourceAspectCorrect, SPKTVOne::aspect1to1);
         
         // On source loss, hold on the last frame received.
         int32_t freeze = 1;
@@ -960,31 +960,13 @@ void troubleshootingMenuAspectHandler(int change, bool action)
 
     if (change == 0 && !action)
     {
-        int32_t payload1 = -1;
-        tvOne.readCommand(kTV1SourceRGB1, kTV1WindowIDA, kTV1FunctionAdjustSourceAspectCorrect, payload1);
-      
-        int32_t payload2 = -1;
-        tvOne.readCommand(kTV1SourceRGB2, kTV1WindowIDA, kTV1FunctionAdjustSourceAspectCorrect, payload2);
-        
-        if ((payload1 == payload2) && (payload2 == tvOneAspectFit)) 
+        switch (tvOne.getAspect())
         {
-            state = 0;
-        }
-        else if ((payload1 == payload2) && (payload2 == tvOneAspectHFill))
-        {
-            state = 1;
-        }
-        else if ((payload1 == payload2) && (payload2 == tvOneAspectVFill)) 
-        {
-            state = 1;
-        }
-        else if ((payload1 == payload2) && (payload2 == tvOneAspect1to1))
-        {
-            state = 2;
-        }
-        else
-        {
-            state = 0;
+            case SPKTVOne::aspectFit : state = 0; break;
+            case SPKTVOne::aspectHFill : state = 1; break;
+            case SPKTVOne::aspectVFill : state = 1; break;
+            case SPKTVOne::aspectSPKFill : state = 1; break;
+            case SPKTVOne::aspect1to1 : state = 2; break;
         }
     }
     
@@ -1010,27 +992,21 @@ void troubleshootingMenuAspectHandler(int change, bool action)
             screen.sendBuffer();
         
             // Do the action
+            bool ok = false;
             switch (state) 
             {
-                case 0: tvOneAspectHandling = tvOneAspectFit; break;
-                case 1: tvOneAspectHandling = tvOneAspectHFill; break;
-                case 2: tvOneAspectHandling = tvOneAspect1to1; break;
+                case 0: ok = tvOne.setAspect(SPKTVOne::aspectFit); break;
+                case 1: ok = tvOne.setAspect(SPKTVOne::aspectSPKFill); break;
+                case 2: ok = tvOne.setAspect(SPKTVOne::aspect1to1); break;
             }
-            
-            bool ok = true;
-            
-            ok = ok && tvOne.command(kTV1SourceRGB1, kTV1WindowIDA, kTV1FunctionAdjustSourceAspectCorrect, tvOneAspectHandling);
-            ok = ok && tvOne.command(kTV1SourceRGB2, kTV1WindowIDA, kTV1FunctionAdjustSourceAspectCorrect, tvOneAspectHandling);
-            
             if (ok) tvOne.command(0, kTV1WindowIDA, kTV1FunctionPowerOnPresetStore, 1);
             
             std::string sendOK = ok ? "Sent: " : "Send Error: ";
-            switch (tvOneAspectHandling) 
+            switch (state) 
             {
-                case tvOneAspectFit: sendOK += "Aspect Fit "; break;
-                case tvOneAspectHFill: sendOK += "Aspect Fill"; break;
-                case tvOneAspectVFill: sendOK += "Aspect Fill"; break;
-                case tvOneAspect1to1: sendOK += "Aspect 1:1"; break;
+                case 0: sendOK += "Aspect Fit "; break;
+                case 1: sendOK += "Aspect Fill"; break;
+                case 2: sendOK += "Aspect 1:1"; break;
             }
             tvOneStatusMessage.addMessage(sendOK, kTVOneStatusMessageHoldTime);
         }

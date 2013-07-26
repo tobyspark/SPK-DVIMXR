@@ -43,7 +43,7 @@
  * v24 - Conform uploads SIS image; now once firmware is loaded controller is all that is required
  * v25 - UX work
  * v26 - Tweaks: Network in works with hands-on controls, EDID Change message, Fit/Fill
- * vxx - TODO: Rework Keying UX, having current key saved in processor and loading in presets.
+ * v27 - TODO: Rework Keying UX, having current key saved in processor and loading in presets.
  * vxx - TODO: Reads OSC and ArtNet network info from .ini
  * vxx - TODO: Writes back to .ini on USB mass storage: keyer updates, comms, hdcp, edid internal/passthrough, ...?
  * vxx - TODO: EDID creation from resolution
@@ -63,7 +63,7 @@
 #include "DMX.h"
 #include "filter.h"
 
-#define kSPKDFSoftwareVersion "26"
+#define kSPKDFSoftwareVersion "27"
 
 // MBED PINS
 
@@ -1175,77 +1175,25 @@ void mixModeUpdateKeyMenuHandler(int menuChange, bool action)
 void troubleshootingMenuResetHandler(int menuChange, bool action)
 {
     static int actionCount = 0;
-    static int state = 0;
     
     if (action) actionCount++;
     
     if (actionCount == 0)
     {
         screen.clearBufferRow(kMenuLine2);
-        
-        state += menuChange;
-        if (state > 1) state = 1;
-        if (state < 0) state = 0;
-        
-        switch (state) 
-        {
-            case 0: screen.textToBuffer("1. Controller [Reset/    ]", kMenuLine2); break;
-            case 1: screen.textToBuffer("1. Controller [     /Skip]", kMenuLine2); break;
-        }
+        screen.textToBuffer("Follow instructions... [+]", kMenuLine2);  
     }
     if (actionCount == 1)
     {
-        if (state == 0) 
-        {
-            tvOneRGB1Stable = false;
-            tvOneRGB2Stable = false;
-            handleTVOneSources();
-
-            bool ok = settings.load(kSPKDFSettingsFilename);
-            if (!ok) settings.loadDefaults();
-            
-            setMixModeMenuItems();
-            setResolutionMenuItems();
-            
-            tvOneStatusMessage.addMessage("Controller Reset", kTVOneStatusMessageHoldTime);
-            
-            actionCount++;
-        }
-        else if (state == 1)
-        {
-            actionCount++;
-        }
-        
-        state = 0;
+        screen.clearBufferRow(kMenuLine2);
+        screen.textToBuffer("On Processor find...   [+]", kMenuLine2);  
     }
     if (actionCount == 2)
     {
         screen.clearBufferRow(kMenuLine2);
-        
-        state += menuChange;
-        if (state > 1) state = 1;
-        if (state < 0) state = 0;
-        switch (state) 
-        {
-            case 0: screen.textToBuffer("2. Processor [Reset/    ]", kMenuLine2); break;
-            case 1: screen.textToBuffer("2. Processor [     /Skip]", kMenuLine2); break;
-        }  
+        screen.textToBuffer("MENU+STANDBY buttons[+]", kMenuLine2);
     }
     if (actionCount == 3)
-    {
-        if (state == 0) 
-        {
-            screen.clearBufferRow(kMenuLine2);
-            screen.textToBuffer("Find MENU+STANDBY [NEXT]", kMenuLine2);
-        }
-        else if (state == 1)
-        {
-            actionCount = actionCount + 3; // extra stage to skip
-        }
-        
-        state = 0;
-    }
-    if (actionCount == 4)
     {
         Timer timer;
         timer.start();
@@ -1260,12 +1208,12 @@ void troubleshootingMenuResetHandler(int menuChange, bool action)
         }
         
         screen.clearBufferRow(kMenuLine2);
-        screen.textToBuffer("Hold buttons for [NEXT]", kMenuLine2);
+        screen.textToBuffer("Hold buttons for [+]", kMenuLine2);
     }
-    if (actionCount == 5)
+    if (actionCount == 4)
     {
         screen.clearBufferRow(kMenuLine2);
-        screen.textToBuffer("Updating processor [---]", kMenuLine2);
+        screen.textToBuffer("Updating processor [-]", kMenuLine2);
         screen.clearBufferRow(kTVOneStatusLine);
         screen.textToBuffer("Sending...", kTVOneStatusLine);
         screen.sendBuffer();
@@ -1282,12 +1230,12 @@ void troubleshootingMenuResetHandler(int menuChange, bool action)
         
         actionCount++;
     }
-    if (actionCount == 6)
+    if (actionCount == 5)
     {
         screen.clearBufferRow(kMenuLine2);
-        screen.textToBuffer("3. No more steps [DONE]", kMenuLine2);
+        screen.textToBuffer("Reset complete [DONE]", kMenuLine2);
     }
-    if (actionCount == 7)
+    if (actionCount == 6)
     {
         // Get back to menu
         actionCount = 0;
@@ -1714,7 +1662,7 @@ int main()
                 if (debug) { debug->printf("Warning: No action identified"); }
             }
         }
-        
+
         // Send any updates to the display
         screen.clearBufferRow(kTVOneStatusLine);
         screen.textToBuffer(tvOneStatusMessage.message(), kTVOneStatusLine);
@@ -1773,7 +1721,7 @@ int main()
         if ((commsMode == commsOSC) || (commsMode == commsArtNet) || (commsMode == commsDMXIn))
         {
             bool commsIn = false;
-        
+
             switch (commsMode)
             {
                 case commsOSC:      commsIn = processOSCIn(); break;

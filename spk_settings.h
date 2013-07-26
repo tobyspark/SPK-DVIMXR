@@ -34,6 +34,15 @@ public:
         paramSet[minV] = 128;
         paramSet[maxV] = 129;
         keyerParamSets.push_back(paramSet);
+        keyerParamNames.push_back("Key - Current");
+        
+        paramSet[minY] = 0;
+        paramSet[maxY] = 18;
+        paramSet[minU] = 128;
+        paramSet[maxU] = 129;
+        paramSet[minV] = 128;
+        paramSet[maxV] = 129;
+        keyerParamSets.push_back(paramSet);
         keyerParamNames.push_back("Lumakey");
         
         paramSet[minY] = 30;
@@ -214,6 +223,16 @@ public:
                         keyerParamNames.clear();
                         keyerParamSets.clear();
                         keyParamCleared = true;
+                        
+                        vector<int> paramSet(6);
+                        paramSet[minY] = 0;
+                        paramSet[maxY] = 18;
+                        paramSet[minU] = 128;
+                        paramSet[maxU] = 129;
+                        paramSet[minV] = 128;
+                        paramSet[maxV] = 129;
+                        keyerParamSets.push_back(paramSet);
+                        keyerParamNames.push_back("Key - Current");
                     }
                 
                     // Apply settings

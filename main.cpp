@@ -426,7 +426,7 @@ bool handleTVOneSources()
         tvOneDetectString += right;
     }
         
-    tvOneStatusMessage.addMessage(tvOneDetectString, 0);
+    tvOneStatusMessage.addMessage(tvOneDetectString);
     
     // Assign appropriate source depending on whether DVI input is good
     // If that assign command completes ok, and the DVI input is good, finally flag the unit has had a live source
@@ -1565,7 +1565,7 @@ int main()
                     else                    message = "Sent: Resolution + EDID";
                 }
                 else                        message = "Send Error: Resolution";
-                tvOneStatusMessage.addMessage(message, kTVOneStatusMessageHoldTime);
+                tvOneStatusMessage.addMessage(message, kTVOneStatusMessageHoldTime, kTVOneStatusMessageHoldTime);
                 
                 // This is WHACK. Can't believe it's both needed and officially in the 1T-C2-750 manual
                 if ((oldEDID != newEDID) && ok) tvOneStatusMessage.addMessage("EDID: Processor Off+On?", kTVOneStatusMessageHoldTime);
@@ -1699,7 +1699,7 @@ int main()
                     
                     std::string sendOK = ok ? "Conform success" : "Send Error: Conform";
                     
-                    tvOneStatusMessage.addMessage(sendOK, 30);
+                    tvOneStatusMessage.addMessage(sendOK, kTVOneStatusMessageHoldTime, 600);
                 }
 //                else if (advancedMenu.selectedItem().payload.command[0] == advancedSetResolutions)
 //                {

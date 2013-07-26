@@ -202,58 +202,101 @@ class SPKMessageHold {
 public:
 
     SPKMessageHold() {
-        holding = false;
+        state = notHold;
         currentMessage = "";
         savedMessage = "";
     }
     
-    void addMessage(string message, float minimumSeconds) 
+    void addMessage(string message)
     {
-        if (holding)
+        addMessage(message, 0, 0);
+    }
+    
+    void addMessage(string message, float maxSecs)
+    {
+        addMessage(message, 0.1, maxSecs);
+    }
+    
+    void addMessage(string message, float minSecs, float maxSecs) 
+    {
+        if (state == notHold)
         {
-            if (minimumSeconds > 0.0f)  enqueuedMessages.push( make_pair(message, minimumSeconds) );
-            else                        savedMessage = message;
-        }
-        else
-        {
-            if (minimumSeconds > 0.0f)
+            if (maxSecs > 0.0f)
             {
-                timeout.detach();
-                timeout.attach(this, &SPKMessageHold::handleTimeout, minimumSeconds);
-                holding = true;
+                state = (minSecs > 0) ? holdWaitingForMin : holdMinPassed;
                 savedMessage = currentMessage;
                 currentMessage = message;
+                
+                maxTimeout.attach(this, &SPKMessageHold::handleTimeout, maxSecs);
+                if (minSecs > 0) minTimeout.attach(this, &SPKMessageHold::handleTimeout, minSecs);
             }
             else
             {
                 currentMessage = message;
             }
         }
+        if (state == holdWaitingForMin)
+        {
+            if (maxSecs > 0.0f)  enqueueMessage(message, minSecs, maxSecs);
+            else                 savedMessage = message;
+        }
+        if (state == holdMinPassed)
+        {
+            if (maxSecs > 0.0f) { enqueueMessage(message, minSecs, maxSecs); dequeueMessage(); }
+            else                savedMessage = message;
+        }
     }
     
     string message() { return currentMessage; }
 
 private:
+    enum stateType { notHold, holdWaitingForMin, holdMinPassed };
+    struct messageType { string message; float minSecs; float maxSecs; };
+
+    void enqueueMessage(string message, float minSecs, float maxSecs)
+    {
+        messageType messageStruct = {message, minSecs, maxSecs};
+        enqueuedMessages.push(messageStruct);
+    }
+
+    void dequeueMessage()
+    {
+        currentMessage = enqueuedMessages.front().message;
+        float minSecs = enqueuedMessages.front().minSecs;
+        float maxSecs = enqueuedMessages.front().maxSecs;
+        enqueuedMessages.pop();
+        
+        maxTimeout.detach();
+        minTimeout.detach();
+        maxTimeout.attach(this, &SPKMessageHold::handleTimeout, maxSecs);
+        if (minSecs > 0) minTimeout.attach(this, &SPKMessageHold::handleTimeout, minSecs);
+        state = (minSecs > 0) ? holdWaitingForMin : holdMinPassed;
+    }
+    
     void handleTimeout() 
     {
         if (enqueuedMessages.empty())
         {
-            currentMessage = savedMessage;
-            holding = false;
+            if (state == holdWaitingForMin)
+            {
+                state = holdMinPassed;
+            }
+            else
+            {
+                currentMessage = savedMessage;
+                state = notHold;
+            }
         }
         else
         {
-            currentMessage = enqueuedMessages.front().first;
-            float secs = enqueuedMessages.front().second;
-            enqueuedMessages.pop();
-            
-            timeout.attach(this, &SPKMessageHold::handleTimeout, secs);
+            dequeueMessage();
         }
     }
     
-    bool holding;
+    stateType state;
     string currentMessage;
     string savedMessage;
-    queue< pair<string, float> >enqueuedMessages;
-    Timeout timeout;
+    queue< messageType >enqueuedMessages;
+    Timeout minTimeout;
+    Timeout maxTimeout;
 };

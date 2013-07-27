@@ -45,6 +45,7 @@
  * v26 - Tweaks: Network in works with hands-on controls, EDID Change message, Fit/Fill
  * v27 - Rework Keying UX, having current key saved in processor and loading in presets.
  * v28 - Network tweaks. Reads OSC and ArtNet network info from .ini
+ * v29 - Keying: Can change between Left over Right and Right over Left
  * vxx - TODO: Writes back to .ini on USB mass storage: keyer updates, comms, hdcp, edid internal/passthrough, ...?
  * vxx - TODO: EDID creation from resolution
  */
@@ -63,7 +64,7 @@
 #include "DMX.h"
 #include "filter.h"
 
-#define kSPKDFSoftwareVersion "28"
+#define kSPKDFSoftwareVersion "29"
 
 // MBED PINS
 
@@ -150,8 +151,9 @@ SPKMenu resolutionMenu;
 SPKMenu mixModeMenu;
 SPKMenu mixModeAdditiveMenu;
 SPKMenu mixModeUpdateKeyMenu; 
-enum { mixBlend, mixAdditive, mixKey };
-int mixKeyStartIndex = 1; // need this hard coded as mixBlend and mixAdditive are now combined into the same menu item
+enum { mixBlend, mixAdditive, mixKeyLeft, mixKeyRight };
+int mixKeyPresetStartIndex = 100; // need this hard coded as mixBlend and mixAdditive are now combined into the same menu item
+int mixKeyWindow = kTV1WindowIDA; // The window we've last used to key
 int mixMode = mixBlend; // Start with safe mix mode, and test to get out of it. Safe mode will work with inputs missing and without hold frames.
 int mixModeOld = mixMode;
 float fadeCurve = 0.0f; // 0 = "X", ie. as per blend, 1 = "/\", ie. as per additive  <-- pictograms!
@@ -474,52 +476,66 @@ bool handleTVOneSources()
     return ok;
 }   
 
-void actionMixMode()
+void actionMixMode(bool reset = false)
 {
     if (debug) debug->printf("Changing mix mode \r\n");
 
     bool ok = true;
     string sentOK;
-    char sentMSGBuffer[kStringBufferLength];
+    char* sentMSGBuffer = "Blend";
 
-    // Set Keyer
-    if (mixMode != mixKey)
-    {
-        // Set Keyer Off. Quicker to set and fail than to test for on and then turn off
-        tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerEnable, false);
-        
-        if (mixMode == mixBlend)    
+    if (mixMode == mixAdditive) 
+    {   
+        sentMSGBuffer = "Additive";
+    
+        // First set B to what you'd expect for additive; it may be left at 100 if optimised blend mixing was previous mixmode.
+        ok =       tvOne.command(0, kTV1WindowIDB, kTV1FunctionAdjustWindowsMaxFadeLevel, fadeBPercent);
+        // Then turn on Additive Mixing
+        if (tvOne.getProcessorType().version == 423)
         {
-            // Turn off Additive Mixing on output
-            if (tvOne.getProcessorType().version == 423)
-            {
-                ok = tvOne.command(0, kTV1WindowIDA, 0x298, 0);
-            }
-            snprintf(sentMSGBuffer, kStringBufferLength, "Blend");
+            ok = ok && tvOne.command(0, kTV1WindowIDA, 0x298, 1);
         }
-        if (mixMode == mixAdditive) 
-        {   
-            // First set B to what you'd expect for additive; it may be left at 100 if optimised blend mixing was previous mixmode.
-            ok =       tvOne.command(0, kTV1WindowIDB, kTV1FunctionAdjustWindowsMaxFadeLevel, fadeBPercent);
-            // Then turn on Additive Mixing
-            if (tvOne.getProcessorType().version == 423)
-            {
-                ok = ok && tvOne.command(0, kTV1WindowIDA, 0x298, 1);
-            }
-            snprintf(sentMSGBuffer, kStringBufferLength, "Additive");
-        }                
     }
-    else
+    if (mixModeOld == mixAdditive || reset)
     {
         // Turn off Additive Mixing on output
         if (tvOne.getProcessorType().version == 423)
         {
             ok = tvOne.command(0, kTV1WindowIDA, 0x298, 0);
         }
+    }
+    
+    if (mixMode == mixKeyLeft)
+    {
+        sentMSGBuffer = "Key L over R";
+        
         // Turn on Keyer
         ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerEnable, true);
+    }
+    if (mixModeOld == mixKeyLeft || reset)
+    {
+        // Turn off Keyer
+        tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerEnable, false);
+    }
+    
+    if (mixMode == mixKeyRight)
+    {
+        sentMSGBuffer = "Key R over L";
         
-        snprintf(sentMSGBuffer, kStringBufferLength, "Key L over R");
+        // Turn on Keyer
+        ok = ok && tvOne.command(0, kTV1WindowIDB, kTV1FunctionAdjustKeyerEnable, true);
+        
+        
+        // Set window B above window A
+        ok = ok && tvOne.command(0, kTV1WindowIDB, kTV1FunctionAdjustWindowsLayerPriority, 0);
+    }
+    if (mixModeOld == mixKeyRight || reset)
+    {
+        // Turn off Keyer
+        tvOne.command(0, kTV1WindowIDB, kTV1FunctionAdjustKeyerEnable, false);
+        
+        // Restore window positions
+        ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustWindowsLayerPriority, 0);
     }
     
     mixModeOld = mixMode;
@@ -538,11 +554,13 @@ bool checkTVOneMixStatus()
     
     // Mix Mode
     bool mixModeNeedsAction = false;
-    bool additiveOn = false, keyerOn = false;
+    bool additiveOn = false, keyLeftOn = false, keyRightOn = false;
+    int  windowAPriority = -1;
     
-    if (mixMode == mixBlend)    { additiveOn = false; keyerOn = false;}
-    if (mixMode == mixAdditive) { additiveOn = true;  keyerOn = false;}
-    if (mixMode >= mixKey)      { additiveOn = false; keyerOn = true; }
+    if (mixMode == mixBlend)    { additiveOn = false; keyLeftOn = false; keyRightOn = false; windowAPriority = 0;}
+    if (mixMode == mixAdditive) { additiveOn = true;  keyLeftOn = false; keyRightOn = false; windowAPriority = 0;}
+    if (mixMode == mixKeyLeft)  { additiveOn = false; keyLeftOn = true;  keyRightOn = false; windowAPriority = 0;}
+    if (mixMode == mixKeyRight) { additiveOn = false; keyLeftOn = false; keyRightOn = true;  windowAPriority = 1;}
     
     if (tvOne.getProcessorType().version == 423)
     {
@@ -553,12 +571,20 @@ bool checkTVOneMixStatus()
     
     payload = -1;
     ok = ok && tvOne.readCommand(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerEnable, payload);
-    if (payload != keyerOn) mixModeNeedsAction = true;
+    if (payload != keyLeftOn) mixModeNeedsAction = true;
+
+    payload = -1;
+    ok = ok && tvOne.readCommand(0, kTV1WindowIDB, kTV1FunctionAdjustKeyerEnable, payload);
+    if (payload != keyRightOn) mixModeNeedsAction = true;
+    
+    payload = -1;
+    ok = ok && tvOne.readCommand(0, kTV1WindowIDA, kTV1FunctionAdjustWindowsLayerPriority, payload);
+    if (payload != windowAPriority) mixModeNeedsAction = true;
 
     if (ok && mixModeNeedsAction) 
     {
         if (debug) debug->printf("Check TVOne Mix Status requiring mixMode action. mixMode: %i \r\n", mixMode);
-        actionMixMode();
+        actionMixMode(true);
     }
     
     // Check Fade
@@ -716,14 +742,15 @@ void setMixModeMenuItems()
         mixModeMenu.addMenuItem(SPKMenuItem("Blend", mixBlend));
     }
     
-    mixModeMenu.addMenuItem(SPKMenuItem("Key: L over R", mixKey));
+    mixModeMenu.addMenuItem(SPKMenuItem("Key: L over R", mixKeyLeft));
+    mixModeMenu.addMenuItem(SPKMenuItem("Key: R over L", mixKeyRight));
     mixModeMenu.addMenuItem(SPKMenuItem("Key: Tweak key values", &mixModeUpdateKeyMenu));
     
     // Load in presets from settings. Index 0 is the "live" key read from TVOne, so we ignore here.
     if (settings.keyerSetCount() > 1)
         for (int i=1; i < settings.keyerSetCount(); i++)
         {
-            mixModeMenu.addMenuItem(SPKMenuItem("Key Preset: " + settings.keyerParamName(i), mixKey + i));
+            mixModeMenu.addMenuItem(SPKMenuItem("Key Preset: " + settings.keyerParamName(i), mixKeyPresetStartIndex + i));
         }
     
     mixModeMenu.addMenuItem(SPKMenuItem("Back to Main Menu", &mainMenu));
@@ -1005,26 +1032,29 @@ void troubleshootingMenuAspectHandler(int change, bool action)
 void mixModeUpdateKeyMenuHandler(int menuChange, bool action)
 {
     static int actionCount = 0;
+    static int state = 0;
+    
+    if (mixMode == mixKeyLeft)  mixKeyWindow = kTV1WindowIDA;
+    if (mixMode == mixKeyRight) mixKeyWindow = kTV1WindowIDB;
     
     if (action) actionCount++;
     
     if (actionCount == 0) 
     {
         settings.editingKeyerSetIndex = 0;
-        printf("about to load\r\n");
+        
         bool ok;
         int minY, maxY, minU, maxU, minV, maxV;
     
-        ok =       tvOne.readCommand(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerMinY, minY); 
-        ok = ok && tvOne.readCommand(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerMaxY, maxY); 
-        ok = ok && tvOne.readCommand(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerMinU, minU); 
-        ok = ok && tvOne.readCommand(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerMaxU, maxU); 
-        ok = ok && tvOne.readCommand(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerMinV, minV); 
-        ok = ok && tvOne.readCommand(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerMaxV, maxV);
+        ok =       tvOne.readCommand(0, mixKeyWindow, kTV1FunctionAdjustKeyerMinY, minY); 
+        ok = ok && tvOne.readCommand(0, mixKeyWindow, kTV1FunctionAdjustKeyerMaxY, maxY); 
+        ok = ok && tvOne.readCommand(0, mixKeyWindow, kTV1FunctionAdjustKeyerMinU, minU); 
+        ok = ok && tvOne.readCommand(0, mixKeyWindow, kTV1FunctionAdjustKeyerMaxU, maxU); 
+        ok = ok && tvOne.readCommand(0, mixKeyWindow, kTV1FunctionAdjustKeyerMinV, minV); 
+        ok = ok && tvOne.readCommand(0, mixKeyWindow, kTV1FunctionAdjustKeyerMaxV, maxV);
         
         if (ok)
         {
-        printf("%u %u %u %u", minY, maxY, minU, maxU);
             settings.setEditingKeyerSetValue(SPKSettings::minY, minY);
             settings.setEditingKeyerSetValue(SPKSettings::maxY, maxY);
             settings.setEditingKeyerSetValue(SPKSettings::minU, minU);
@@ -1042,6 +1072,44 @@ void mixModeUpdateKeyMenuHandler(int menuChange, bool action)
     }
     if (actionCount == 1)
     {
+        state += menuChange;
+
+        screen.clearBufferRow(kMenuLine1);
+        screen.clearBufferRow(kMenuLine2);
+        screen.textToBuffer("Tweak or start over?", kMenuLine1);
+        
+        char paramLine[kStringBufferLength];
+        
+        if (state % 2)  snprintf(paramLine, kStringBufferLength, "[%3i/%3i][%3i/%3i][%3i/%3i]", 0, 
+                                                                                                255, 
+                                                                                                0, 
+                                                                                                255,
+                                                                                                0, 
+                                                                                                255);
+        else            snprintf(paramLine, kStringBufferLength, "[%3i/%3i][%3i/%3i][%3i/%3i]", settings.editingKeyerSetValue(SPKSettings::minY), 
+                                                                                                settings.editingKeyerSetValue(SPKSettings::maxY), 
+                                                                                                settings.editingKeyerSetValue(SPKSettings::minU), 
+                                                                                                settings.editingKeyerSetValue(SPKSettings::maxU),
+                                                                                                settings.editingKeyerSetValue(SPKSettings::minV), 
+                                                                                                settings.editingKeyerSetValue(SPKSettings::maxV));
+        screen.textToBuffer(paramLine, kMenuLine2); 
+    }
+    if (actionCount == 2)
+    {
+        if (state % 2)
+        {
+            settings.setEditingKeyerSetValue(SPKSettings::minY,0);
+            settings.setEditingKeyerSetValue(SPKSettings::maxY,255);
+            settings.setEditingKeyerSetValue(SPKSettings::minU,0);
+            settings.setEditingKeyerSetValue(SPKSettings::maxU,255);
+            settings.setEditingKeyerSetValue(SPKSettings::minV,0);
+            settings.setEditingKeyerSetValue(SPKSettings::maxV,255);
+        }
+        
+        actionCount = 3;
+    }
+    if (actionCount == 3)
+    {
         int value = settings.editingKeyerSetValue(SPKSettings::maxY);
         value += menuChange;
         if (value < 0) value = 0;
@@ -1056,9 +1124,9 @@ void mixModeUpdateKeyMenuHandler(int menuChange, bool action)
         snprintf(paramLine, kStringBufferLength, "[   /%3i][   /   ][   /   ]", value);
         screen.textToBuffer(paramLine, kMenuLine2);
         
-        tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerMaxY, value);   
+        tvOne.command(0, mixKeyWindow, kTV1FunctionAdjustKeyerMaxY, value);   
     }
-    else if (actionCount == 2)
+    else if (actionCount == 4)
     {
         int value = settings.editingKeyerSetValue(SPKSettings::minY);
         value += menuChange;
@@ -1075,9 +1143,9 @@ void mixModeUpdateKeyMenuHandler(int menuChange, bool action)
                                                                                 settings.editingKeyerSetValue(SPKSettings::maxY));
         screen.textToBuffer(paramLine, kMenuLine2);
         
-        tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerMinY, value); 
+        tvOne.command(0, mixKeyWindow, kTV1FunctionAdjustKeyerMinY, value); 
     }
-    else if (actionCount == 3)
+    else if (actionCount == 5)
     {
         int value = settings.editingKeyerSetValue(SPKSettings::maxU);
         value += menuChange;
@@ -1095,9 +1163,9 @@ void mixModeUpdateKeyMenuHandler(int menuChange, bool action)
                                                                                 value);
         screen.textToBuffer(paramLine, kMenuLine2);
         
-        tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerMaxU, value); 
+        tvOne.command(0, mixKeyWindow, kTV1FunctionAdjustKeyerMaxU, value); 
     }
-    else if (actionCount == 4)
+    else if (actionCount == 6)
     {
         int value = settings.editingKeyerSetValue(SPKSettings::minU);
         value += menuChange;
@@ -1116,9 +1184,9 @@ void mixModeUpdateKeyMenuHandler(int menuChange, bool action)
                                                                                 settings.editingKeyerSetValue(SPKSettings::maxU));
         screen.textToBuffer(paramLine, kMenuLine2);
         
-        tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerMinU, value);
+        tvOne.command(0, mixKeyWindow, kTV1FunctionAdjustKeyerMinU, value);
     }
-    else if (actionCount == 5)
+    else if (actionCount == 7)
     {
         int value = settings.editingKeyerSetValue(SPKSettings::maxV);
         value += menuChange;
@@ -1138,9 +1206,9 @@ void mixModeUpdateKeyMenuHandler(int menuChange, bool action)
                                                                                 value);
         screen.textToBuffer(paramLine, kMenuLine2);
         
-        tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerMaxV, value);    
+        tvOne.command(0, mixKeyWindow, kTV1FunctionAdjustKeyerMaxV, value);    
     }
-    else if (actionCount == 6)
+    else if (actionCount == 8)
     {
         int value = settings.editingKeyerSetValue(SPKSettings::minV);
         value += menuChange;
@@ -1161,12 +1229,12 @@ void mixModeUpdateKeyMenuHandler(int menuChange, bool action)
                                                                                 settings.editingKeyerSetValue(SPKSettings::maxV));
         screen.textToBuffer(paramLine, kMenuLine2);
         
-        tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerMinV, value);    
+        tvOne.command(0, mixKeyWindow, kTV1FunctionAdjustKeyerMinV, value);    
     }
-    else if (actionCount == 7)
+    else if (actionCount == 9)
     {
         // Save settings
-        tvOne.command(0, kTV1WindowIDA, kTV1FunctionPowerOnPresetStore, 1);
+        tvOne.command(0, mixKeyWindow, kTV1FunctionPowerOnPresetStore, 1);
     
         // Get back to menu
         actionCount = 0;
@@ -1461,39 +1529,29 @@ int main()
             {
                 int mixModeMenuPayload = mixModeMenu.selectedItem().payload.command[0];
 
-                if (mixModeMenuPayload == mixAdditive)
+                if (mixModeMenuPayload < mixKeyPresetStartIndex)
                 {
-                    // This will have been handled by the mixModeAdditiveMenuHandler 
+                    mixMode = mixModeMenuPayload;
+                    
+                    if (mixMode == mixModeOld) tvOneStatusMessage.addMessage("Already active", kTVOneStatusMessageHoldTime);
                 }
-                else if (mixModeMenuPayload == mixBlend)
-                {
-                    mixMode = mixBlend;
+                else
+                { 
+                    int keySetIndex = mixModeMenuPayload - mixKeyPresetStartIndex;
                     
-                    if (mixMode == mixModeOld) tvOneStatusMessage.addMessage("Blend already active", kTVOneStatusMessageHoldTime);
-                }
-                else if (mixModeMenuPayload >= mixKey)
-                {
-                    mixMode = mixKey;
-                    
-                    int keySetIndex = mixModeMenuPayload - mixKey;
-                    
-                    if (keySetIndex > 0)
+                    if (keySetIndex > 0) // Key set 0 is now the "live" set, we read from processor rather than write to it.
                     {
                         bool ok;
-                        ok =       tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerMinY, settings.keyerParamSet(keySetIndex)[SPKSettings::minY]); 
-                        ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerMaxY, settings.keyerParamSet(keySetIndex)[SPKSettings::maxY]); 
-                        ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerMinU, settings.keyerParamSet(keySetIndex)[SPKSettings::minU]); 
-                        ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerMaxU, settings.keyerParamSet(keySetIndex)[SPKSettings::maxU]); 
-                        ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerMinV, settings.keyerParamSet(keySetIndex)[SPKSettings::minV]); 
-                        ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerMaxV, settings.keyerParamSet(keySetIndex)[SPKSettings::maxV]);
+                        ok =       tvOne.command(0, mixKeyWindow, kTV1FunctionAdjustKeyerMinY, settings.keyerParamSet(keySetIndex)[SPKSettings::minY]); 
+                        ok = ok && tvOne.command(0, mixKeyWindow, kTV1FunctionAdjustKeyerMaxY, settings.keyerParamSet(keySetIndex)[SPKSettings::maxY]); 
+                        ok = ok && tvOne.command(0, mixKeyWindow, kTV1FunctionAdjustKeyerMinU, settings.keyerParamSet(keySetIndex)[SPKSettings::minU]); 
+                        ok = ok && tvOne.command(0, mixKeyWindow, kTV1FunctionAdjustKeyerMaxU, settings.keyerParamSet(keySetIndex)[SPKSettings::maxU]); 
+                        ok = ok && tvOne.command(0, mixKeyWindow, kTV1FunctionAdjustKeyerMinV, settings.keyerParamSet(keySetIndex)[SPKSettings::minV]); 
+                        ok = ok && tvOne.command(0, mixKeyWindow, kTV1FunctionAdjustKeyerMaxV, settings.keyerParamSet(keySetIndex)[SPKSettings::maxV]);
                         
                         tvOne.command(0, kTV1WindowIDA, kTV1FunctionPowerOnPresetStore, 1);
                         
-                        tvOneStatusMessage.addMessage(ok ? "Activated: " + settings.keyerParamName(keySetIndex) + " values" : "Send error: keyer values", kTVOneStatusMessageHoldTime);
-                    }
-                    else
-                    {
-                        if (mixMode == mixModeOld) tvOneStatusMessage.addMessage("Keying already active", kTVOneStatusMessageHoldTime);
+                        tvOneStatusMessage.addMessage(ok ? "Loaded: " + settings.keyerParamName(keySetIndex) + " values" : "Send error: keyer values", kTVOneStatusMessageHoldTime, kTVOneStatusMessageHoldTime);
                     }
                 }
             }
@@ -1813,11 +1871,16 @@ int main()
             newFadeAPercent = newFadeA * fadeUp * 100.0;
             newFadeBPercent = newFadeB * fadeUp * 100.0;
         }
-        else if (mixMode >= mixKeyStartIndex)
+        else if (mixMode == mixKeyLeft)
         {
             newFadeAPercent = (1.0-xFade) * fadeUp * 100.0;
             newFadeBPercent = fadeUp * 100.0;
-        }            
+        }
+        else if (mixMode == mixKeyRight)
+        {
+            newFadeAPercent = fadeUp * 100.0;
+            newFadeBPercent = xFade * fadeUp * 100.0;
+        }
         
         //// TASK: Send to TVOne if percents have changed
         

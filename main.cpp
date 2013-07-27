@@ -754,9 +754,20 @@ void setCommsMenuItems()
     {
         commsMenu.title = "Network Mode [Ethernet]";
         commsMenu.clearMenuItems();
-        commsMenu.addMenuItem(SPKMenuItem("None", commsNone));
-        commsMenu.addMenuItem(SPKMenuItem("OSC", commsOSC));
-        commsMenu.addMenuItem(SPKMenuItem("ArtNet", commsArtNet));
+        switch (commsMode) // Cannot switch between OSC and Artnet once one is selected (crash in EthernetIf deconstructor?), so this.
+        {
+            case commsNone:        
+                commsMenu.addMenuItem(SPKMenuItem("None", commsNone));
+                commsMenu.addMenuItem(SPKMenuItem("OSC", commsOSC));
+                commsMenu.addMenuItem(SPKMenuItem("ArtNet", commsArtNet));
+                break;
+            case commsOSC:
+                commsMenu.addMenuItem(SPKMenuItem("OSC", commsOSC));
+                break;
+            case commsArtNet:
+                commsMenu.addMenuItem(SPKMenuItem("ArtNet", commsArtNet));
+                break;
+        }
         commsMenu.addMenuItem(SPKMenuItem("Back to Main Menu", &mainMenu));
         commsMenu = 0;
     }
@@ -1543,6 +1554,7 @@ int main()
                 // This is the action of commsNone
                 // And also clears the way for other comms actions
                 commsMode = commsNone;
+                /* // These don't take well to being destroyed. So while it was a nice idea to be able to swap between None, OSC and Artnet, now the GUI won't allow it, and we don't need this.
                 if (osc)        {delete osc; osc = NULL;}  
                 if (ethernet)   {delete ethernet; ethernet = NULL;}
                 if (artNet)     
@@ -1554,6 +1566,7 @@ int main()
                     delete artNet; 
                     artNet = NULL;
                 }
+                */
                 if (dmx)        {delete dmx; dmx = NULL;}
                 
                 // Ensure we can't change to comms modes the hardware isn't switched to
@@ -1571,32 +1584,40 @@ int main()
                     commsMode = commsOSC;
                     commsTypeString = "OSC: ";
                     
-                    ethernet = new EthernetNetIf(
-                    IpAddr(kOSCMbedIPAddress), 
-                    IpAddr(kOSCMbedSubnetMask), 
-                    IpAddr(kOSCMbedGateway), 
-                    IpAddr(kOSCMbedDNS)  
-                    );
-                  
-                    EthernetErr ethError = ethernet->setup();
-                    if(ethError)
+                    if (!ethernet)
                     {
-                        if (debug) debug->printf("Ethernet setup error, %d", ethError);
-                        snprintf(commsStatusBuffer, kStringBufferLength, "Ethernet setup failed");
-                        commsMenu = commsNone;
-                        // break out of here. this setup should be a function that returns a boolean
+                        ethernet = new EthernetNetIf(
+                        IpAddr(kOSCMbedIPAddress), 
+                        IpAddr(kOSCMbedSubnetMask), 
+                        IpAddr(kOSCMbedGateway), 
+                        IpAddr(kOSCMbedDNS)  
+                        );
+                      
+                        EthernetErr ethError = ethernet->setup();
+                        if(ethError)
+                        {
+                            if (debug) debug->printf("Ethernet setup error, %d", ethError);
+                            snprintf(commsStatusBuffer, kStringBufferLength, "Ethernet setup failed");
+                            commsMenu = commsNone;
+                            // break out of here. this setup should be a function that returns a boolean
+                        }
                     }
-
-                    osc = new OSCClass();
-                    osc->setReceiveMessage(&receiveMessage);
-                    osc->begin(kOSCMbedPort);
                     
-                    uint8_t destIP[]  = { kOSCDestIPAddress };
-                    sendMessage.setIp( destIP );
-                    sendMessage.setPort( kOSCDestPort );
+                    if (!osc)
+                    {
+                        osc = new OSCClass();
+                        osc->setReceiveMessage(&receiveMessage);
+                        osc->begin(kOSCMbedPort);
+                        
+                        uint8_t destIP[]  = { kOSCDestIPAddress };
+                        sendMessage.setIp( destIP );
+                        sendMessage.setPort( kOSCDestPort );
+                    }
                     
                     IpAddr ethIP = ethernet->getIp();
                     snprintf(commsStatusBuffer, kStringBufferLength, "In %u.%u.%u.%u:%u", ethIP[0], ethIP[1], ethIP[2], ethIP[3], kOSCMbedPort);
+                
+                    setCommsMenuItems(); // remove non-OSC from menu. we're locked in.
                 }
                 else if (commsMenu.selectedItem().payload.command[0] == commsArtNet) 
                 {
@@ -1619,6 +1640,8 @@ int main()
                     artNet->SendArtPollReply(); // announce to art-net nodes
                     
                     snprintf(commsStatusBuffer, kStringBufferLength, "Listening");
+                    
+                    setCommsMenuItems(); // remove non-ArtNet from menu. we're locked in.
                 }
                 else if (commsMenu.selectedItem().payload.command[0] == commsDMXIn) 
                 {

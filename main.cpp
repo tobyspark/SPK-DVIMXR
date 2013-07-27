@@ -1,10 +1,10 @@
 /* *SPARK D-FUSER
  * A project by Toby Harris
  *
- * 'DJ' controller styke RS232 Control for TV-One products
+ * 'DJ' controller style RS232 Control for TV-One products
  * Good for 1T-C2-750, others will need some extra work
  *
- * www.sparkav.co.uk/dvimixer
+ * www.tobyz.net/projects/dvi-mixer
  */
 
 /* Copyright (c) 2011 Toby Harris, MIT License
@@ -43,7 +43,7 @@
  * v24 - Conform uploads SIS image; now once firmware is loaded controller is all that is required
  * v25 - UX work
  * v26 - Tweaks: Network in works with hands-on controls, EDID Change message, Fit/Fill
- * v27 - TODO: Rework Keying UX, having current key saved in processor and loading in presets.
+ * v27 - Rework Keying UX, having current key saved in processor and loading in presets.
  * vxx - TODO: Reads OSC and ArtNet network info from .ini
  * vxx - TODO: Writes back to .ini on USB mass storage: keyer updates, comms, hdcp, edid internal/passthrough, ...?
  * vxx - TODO: EDID creation from resolution
@@ -212,8 +212,8 @@ int oldFadeBPercent = 0;
 bool tapLeftWasFirstPressed = false;
 
 // Comms In fade state
-float commsXFade = 0;
-float commsFadeUp = 0;
+float commsXFade = -1;
+float commsFadeUp = -1;
 float oldXFade = 0;
 float oldFadeUp = 0;
 bool  commsInActive = false;
@@ -1745,8 +1745,8 @@ int main()
         
             if (commsInActive)
             {
-                xFade = commsXFade;
-                fadeUp = commsFadeUp;   
+                if (commsXFade >= 0)    xFade = commsXFade;
+                if (commsFadeUp >= 0)   fadeUp = commsFadeUp;   
             }
         }
 

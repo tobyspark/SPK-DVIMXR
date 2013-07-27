@@ -6,6 +6,37 @@
 #                                                                        #
 ######################################### A PROJECT BY TOBY HARRIS #######
 
+### NETWORK
+#
+# Parameters for the various network modes
+#
+# OSC: if DHCP is set to Yes, the IP address parameters will be ignored.
+# Artnet: Will use the channel mapping set in the DMX section.
+
+[OSC]
+
+DHCP = No
+ControllerAddress = 10.0.0.2
+ControllerPort = 10000
+ControllerSubnetMask = 255.255.255.0
+ControllerGateway = 10.0.0.1
+ControllerDNS = 10.0.0.1
+
+SendAddress = 255.255.255.255
+SendPort = 10000
+
+[ArtNet]
+
+ControllerAddress = 2.0.0.100
+BroadcastAddress = 2.255.255.255
+
+[DMX]
+
+InChannelXFade = 0
+InChannelFadeUp = 1
+OutChannelXFade = 0
+OutChannelFadeUp = 1
+
 ### KEYS
 #
 # Name = What is shown in menu

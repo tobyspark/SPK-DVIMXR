@@ -1,4 +1,5 @@
 #include "mbed.h"
+#include "ipaddr.h"
 #include <string>
 #include <vector>
 
@@ -12,7 +13,31 @@ public:
     enum keyerParameterType {minY = 0, maxY, minU, maxU, minV, maxV};
 
     int editingKeyerSetIndex;
-
+    
+    struct {
+        bool DHCP;
+        IpAddr controllerAddress;
+        int controllerPort;
+        IpAddr controllerSubnetMask;
+        IpAddr controllerGateway;
+        IpAddr controllerDNS;
+        
+        IpAddr sendAddress;
+        int sendPort;
+    } osc;
+    
+    struct {
+        IpAddr controllerAddress;
+        IpAddr broadcastAddress;
+    } artNet;
+    
+    struct {
+        int inChannelXFade;
+        int inChannelFadeUp;
+        int outChannelXFade;
+        int outChannelFadeUp;
+    } dmx;
+    
     SPKSettings()
     {
         editingKeyerSetIndex = -1;
@@ -21,6 +46,26 @@ public:
     
     void loadDefaults()
     {
+        // NETWORK
+        
+        osc.DHCP = false;
+        osc.controllerAddress = IpAddr(10,0,0,2);
+        osc.controllerPort = 10000;
+        osc.controllerSubnetMask = IpAddr(255,255,255,0);
+        osc.controllerGateway = IpAddr(10,0,0,1);
+        osc.controllerDNS = IpAddr(10,0,0,1);
+        
+        osc.sendAddress = IpAddr(255,255,255,255);
+        osc.sendPort = 10000;
+        
+        artNet.controllerAddress = IpAddr(2,0,0,100);
+        artNet.broadcastAddress = IpAddr(2,255,255,255);
+        
+        dmx.inChannelXFade = 0;
+        dmx.inChannelFadeUp = 1;
+        dmx.outChannelXFade = 0;
+        dmx.outChannelFadeUp = 1;
+    
         //// KEYS
         
         keyerParamNames.clear();
@@ -164,7 +209,80 @@ public:
         string filePath("/local/");
         filePath += filename;
 
+        char* const failString = "Failed to read";
+        const int failInt = -1;
+
         dictionary* settings = iniparser_load(filePath.c_str());
+        
+        // NETWORK
+        {
+            bool netReadOK = true;
+        
+            int DHCP = iniparser_getboolean(settings, "OSC:DHCP", failInt);
+            netReadOK = netReadOK && DHCP != failInt;
+            
+            IpAddr controllerAddress = ipAddrWithString(iniparser_getstring(settings, "OSC:ControllerAddress", failString));
+            netReadOK = netReadOK && !controllerAddress.isNull();
+            
+            int controllerPort = iniparser_getboolean(settings, "OSC:ControllerPort", failInt);
+            netReadOK = netReadOK && controllerPort != failInt;
+            
+            IpAddr controllerSubnetMask = ipAddrWithString(iniparser_getstring(settings, "OSC:ControllerSubnetMask", failString));
+            netReadOK = netReadOK && !controllerSubnetMask.isNull();
+            
+            IpAddr controllerGateway = ipAddrWithString(iniparser_getstring(settings, "OSC:ControllerGateway", failString));
+            netReadOK = netReadOK && !controllerGateway.isNull();
+            
+            IpAddr controllerDNS = ipAddrWithString(iniparser_getstring(settings, "OSC:ControllerDNS", failString));
+            netReadOK = netReadOK && !controllerDNS.isNull();
+        
+            IpAddr sendAddress = ipAddrWithString(iniparser_getstring(settings, "OSC:SendAddress", failString));
+            netReadOK = netReadOK && !sendAddress.isNull();
+            
+            int sendPort = iniparser_getboolean(settings, "OSC:SendPort", failInt);
+            netReadOK = netReadOK && sendPort != failInt;
+         
+            IpAddr artNetControllerAddress = ipAddrWithString(iniparser_getstring(settings, "ArtNet:ControllerAddress", failString));
+            netReadOK = netReadOK && !artNetControllerAddress.isNull();
+            
+            IpAddr artNetBroadcastAddress = ipAddrWithString(iniparser_getstring(settings, "ArtNet:BroadcastAddress", failString));
+            netReadOK = netReadOK && !artNetBroadcastAddress.isNull();
+            
+            int inChannelXFade = iniparser_getboolean(settings, "DMX:InChannelXFade", failInt);
+            netReadOK = netReadOK && inChannelXFade != failInt;
+            
+            int inChannelFadeUp = iniparser_getboolean(settings, "DMX:InChannelFadeUp", failInt);
+            netReadOK = netReadOK && inChannelFadeUp != failInt;
+            
+            int outChannelXFade = iniparser_getboolean(settings, "DMX:OutChannelXFade", failInt);
+            netReadOK = netReadOK && outChannelXFade != failInt;
+            
+            int outChannelFadeUp = iniparser_getboolean(settings, "DMX:OutChannelFadeUp", failInt);
+            netReadOK = netReadOK && outChannelFadeUp != failInt;
+            
+            if (netReadOK)
+            {
+                osc.DHCP = DHCP;
+                osc.controllerAddress = controllerAddress;
+                osc.controllerPort = controllerPort;
+                osc.controllerSubnetMask = controllerSubnetMask;
+                osc.controllerGateway = controllerGateway;
+                osc.controllerDNS = controllerDNS;
+        
+                osc.sendAddress = sendAddress;
+                osc.sendPort = sendPort;
+    
+                artNet.controllerAddress = artNetControllerAddress;
+                artNet.broadcastAddress = artNetBroadcastAddress;
+        
+                dmx.inChannelXFade = inChannelXFade;
+                dmx.inChannelFadeUp = inChannelFadeUp;
+                dmx.outChannelXFade = outChannelXFade;
+                dmx.outChannelFadeUp = outChannelFadeUp;
+                
+                success = true;
+            }
+        }
             
         // KEYER
         {
@@ -172,9 +290,7 @@ public:
             
             bool keyParamReadOK = true;
             bool keyParamCleared = false;
-            
-            char* const failString = "Failed to read";
-            const int failInt = -1;
+
             const int stringLength = 11;
             
             // Loop through [Key1,2,...,99] sections
@@ -254,8 +370,6 @@ public:
             bool resolutionReadOK = true;
             bool resolutionCleared = false;
             
-            char* const failString = "Failed to read";
-            const int failInt = -1;
             const int stringLength = 25;
             
             // Loop through [Key1,2,...,99] sections
@@ -318,4 +432,18 @@ protected:
     vector<string>          resolutionNames;
     vector<int32_t>         resolutionIndexes;
     vector<int32_t>         resolutionEDIDIndexes;
+    
+    IpAddr ipAddrWithString(const char* ipAsString)
+    {
+        int ip0, ip1, ip2, ip3;
+        
+        int parsedNum = sscanf(ipAsString, "%u.%u.%u.%u", &ip0, &ip1, &ip2, &ip3);
+        
+        if (parsedNum == 4)
+        {
+            return IpAddr(ip0, ip1, ip2, ip3);
+        }
+        
+        return IpAddr();    
+    }
 };

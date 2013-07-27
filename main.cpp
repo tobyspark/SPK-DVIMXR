@@ -44,7 +44,7 @@
  * v25 - UX work
  * v26 - Tweaks: Network in works with hands-on controls, EDID Change message, Fit/Fill
  * v27 - Rework Keying UX, having current key saved in processor and loading in presets.
- * vxx - TODO: Reads OSC and ArtNet network info from .ini
+ * v28 - Network tweaks. Reads OSC and ArtNet network info from .ini
  * vxx - TODO: Writes back to .ini on USB mass storage: keyer updates, comms, hdcp, edid internal/passthrough, ...?
  * vxx - TODO: EDID creation from resolution
  */
@@ -63,7 +63,7 @@
 #include "DMX.h"
 #include "filter.h"
 
-#define kSPKDFSoftwareVersion "27"
+#define kSPKDFSoftwareVersion "28"
 
 // MBED PINS
 
@@ -96,25 +96,6 @@
 #define kCommsStatusLine 6
 #define kTVOneStatusLine 7
 #define kTVOneStatusMessageHoldTime 5
-
-// NETWORKING
-
-#define kOSCMbedPort 10000
-#define kOSCMbedIPAddress 10,0,0,2
-#define kOSCMbedSubnetMask 255,255,255,0
-#define kOSCMbedGateway 10,0,0,1
-#define kOSCMbedDNS 10,0,0,1
-
-#define kOSCDestIPAddress 255,255,255,255
-#define kOSCDestPort 10000
-
-#define kArtNetBindIPAddress 2,0,0,100
-#define kArtNetBroadcastAddress 2,255,255,255
-
-#define kDMXInChannelXFade 0
-#define kDMXInChannelFadeUp 1
-#define kDMXOutChannelXFade 0
-#define kDMXOutChannelFadeUp 1
 
 // 8.3 format filename only, no subdirs
 #define kSPKDFSettingsFilename "SPKDF.ini"
@@ -358,8 +339,8 @@ void processArtNetOut(const float &xFade, const float &fadeUp)
 
 bool processDMXIn() 
 {
-    int xFadeDMX = dmx->get(kDMXInChannelXFade);
-    int fadeUpDMX = dmx->get(kDMXInChannelFadeUp);
+    int xFadeDMX = dmx->get(settings.dmx.inChannelXFade);
+    int fadeUpDMX = dmx->get(settings.dmx.inChannelFadeUp);
 
     if (((float)xFadeDMX/255 != commsXFade) && ((float)fadeUpDMX/255 != commsFadeUp))
     {
@@ -384,8 +365,8 @@ void processDMXOut(const float &xFade, const float &fadeUp)
     int xFadeDMX = xFade*255;
     int fadeUpDMX = fadeUp*255;
     
-    dmx->put(kDMXOutChannelXFade, xFadeDMX);
-    dmx->put(kDMXOutChannelFadeUp, fadeUpDMX);
+    dmx->put(settings.dmx.outChannelXFade, xFadeDMX);
+    dmx->put(settings.dmx.outChannelFadeUp, fadeUpDMX);
     
     char statusMessageBuffer[kStringBufferLength];
     snprintf(statusMessageBuffer, kStringBufferLength, "DMX Out: xF %3i fUp %3i", xFadeDMX, fadeUpDMX);
@@ -1586,13 +1567,20 @@ int main()
                     
                     if (!ethernet)
                     {
-                        ethernet = new EthernetNetIf(
-                        IpAddr(kOSCMbedIPAddress), 
-                        IpAddr(kOSCMbedSubnetMask), 
-                        IpAddr(kOSCMbedGateway), 
-                        IpAddr(kOSCMbedDNS)  
-                        );
-                      
+                        if (settings.osc.DHCP)
+                        {
+                            ethernet = new EthernetNetIf("dvimxr");
+                        }
+                        else
+                        {
+                            ethernet = new EthernetNetIf(
+                                settings.osc.controllerAddress, 
+                                settings.osc.controllerSubnetMask, 
+                                settings.osc.controllerGateway, 
+                                settings.osc.controllerDNS  
+                            );
+                        }
+                        
                         EthernetErr ethError = ethernet->setup();
                         if(ethError)
                         {
@@ -1607,15 +1595,15 @@ int main()
                     {
                         osc = new OSCClass();
                         osc->setReceiveMessage(&receiveMessage);
-                        osc->begin(kOSCMbedPort);
+                        osc->begin(settings.osc.sendPort);
                         
-                        uint8_t destIP[]  = { kOSCDestIPAddress };
-                        sendMessage.setIp( destIP );
-                        sendMessage.setPort( kOSCDestPort );
+                        uint8_t sendAddress[] = {settings.osc.sendAddress[0], settings.osc.sendAddress[1], settings.osc.sendAddress[2], settings.osc.sendAddress[3]};
+                        sendMessage.setIp( sendAddress );
+                        sendMessage.setPort( settings.osc.sendPort );
                     }
                     
                     IpAddr ethIP = ethernet->getIp();
-                    snprintf(commsStatusBuffer, kStringBufferLength, "In %u.%u.%u.%u:%u", ethIP[0], ethIP[1], ethIP[2], ethIP[3], kOSCMbedPort);
+                    snprintf(commsStatusBuffer, kStringBufferLength, "In %u.%u.%u.%u:%u", ethIP[0], ethIP[1], ethIP[2], ethIP[3], settings.osc.controllerPort);
                 
                     setCommsMenuItems(); // remove non-OSC from menu. we're locked in.
                 }
@@ -1626,8 +1614,8 @@ int main()
 
                     artNet = new DmxArtNet();
                     
-                    artNet->BindIpAddress = IpAddr(kArtNetBindIPAddress);
-                    artNet->BCastAddress = IpAddr(kArtNetBroadcastAddress);
+                    artNet->BindIpAddress = settings.artNet.controllerAddress;
+                    artNet->BCastAddress = settings.artNet.broadcastAddress;
                 
                     artNet->InitArtPollReplyDefaults();
                 

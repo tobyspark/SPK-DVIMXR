@@ -105,8 +105,8 @@
 #define kOSCMbedGateway 10,0,0,1
 #define kOSCMbedDNS 10,0,0,1
 
-#define kOSCDestIPAddress 10,0,0,1
-#define kOSCDestPort 12000
+#define kOSCDestIPAddress 255,255,255,255
+#define kOSCDestPort 10000
 
 #define kArtNetBindIPAddress 2,0,0,100
 #define kArtNetBroadcastAddress 2,255,255,255
@@ -263,6 +263,20 @@ bool processOSCIn()
                         
                         char buffer[15];
                         snprintf(buffer, 15, "/fadeUp %1.2f", commsFadeUp);
+                        statusMessage += buffer;
+                    }
+            }
+            else if (!strcmp( receiveMessage.getSubAddress() , "xFadeFadeUp" ))
+            {
+                if (receiveMessage.getArgNum() == 2)
+                    if (receiveMessage.getTypeTag(0) == 'f' && receiveMessage.getTypeTag(1) == 'f')
+                    {
+                        commsXFade  = receiveMessage.getArgFloat(0);
+                        commsFadeUp = receiveMessage.getArgFloat(1);
+                        updateFade = true;
+                        
+                        char buffer[15];
+                        snprintf(buffer, 15, "/... %1.2f %1.2f", commsXFade, commsFadeUp);
                         statusMessage += buffer;
                     }
             }
@@ -1555,7 +1569,7 @@ int main()
                 else if (commsMenu.selectedItem().payload.command[0] == commsOSC) 
                 {
                     commsMode = commsOSC;
-                    commsTypeString = "OSC: ";                    
+                    commsTypeString = "OSC: ";
                     
                     ethernet = new EthernetNetIf(
                     IpAddr(kOSCMbedIPAddress), 
@@ -1581,7 +1595,8 @@ int main()
                     sendMessage.setIp( destIP );
                     sendMessage.setPort( kOSCDestPort );
                     
-                    snprintf(commsStatusBuffer, kStringBufferLength, "Listening on %i", kOSCMbedPort);
+                    IpAddr ethIP = ethernet->getIp();
+                    snprintf(commsStatusBuffer, kStringBufferLength, "In %u.%u.%u.%u:%u", ethIP[0], ethIP[1], ethIP[2], ethIP[3], kOSCMbedPort);
                 }
                 else if (commsMenu.selectedItem().payload.command[0] == commsArtNet) 
                 {
@@ -1740,7 +1755,12 @@ int main()
             {
                 // If no comms in update this loop, hold to the last unless hands-on controls have moved significantly
                 bool movement = (fabs(oldXFade-xFade) > 0.1) || (fabs(oldFadeUp-fadeUp) > 0.1);
-                if (movement) commsInActive = false;
+                if (movement) 
+                {   
+                    commsInActive = false;
+                    commsXFade = -1;
+                    commsFadeUp = -1;
+                }
             }
         
             if (commsInActive)
@@ -1845,17 +1865,17 @@ int main()
         if (mixMode != mixModeOld) actionMixMode();
                 
         //// TASK: Process Network Comms Out, ie. send out any fade updates
-        if (commsMode == commsOSC && updateFade)
+        if (commsMode == commsOSC && updateFade && !commsInActive)
         {
             processOSCOut(xFade, fadeUp);
         }
 
-        if (commsMode == commsArtNet && updateFade)
+        if (commsMode == commsArtNet && updateFade && !commsInActive)
         {
             processArtNetOut(xFade, fadeUp);
         }
 
-        if (commsMode == commsDMXOut && updateFade)
+        if (commsMode == commsDMXOut && updateFade && !commsInActive)
         {
             processDMXOut(xFade, fadeUp);
         }

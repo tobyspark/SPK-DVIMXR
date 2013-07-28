@@ -224,7 +224,7 @@ public:
             IpAddr controllerAddress = ipAddrWithString(iniparser_getstring(settings, "OSC:ControllerAddress", failString));
             netReadOK = netReadOK && !controllerAddress.isNull();
             
-            int controllerPort = iniparser_getboolean(settings, "OSC:ControllerPort", failInt);
+            int controllerPort = iniparser_getint(settings, "OSC:ControllerPort", failInt);
             netReadOK = netReadOK && controllerPort != failInt;
             
             IpAddr controllerSubnetMask = ipAddrWithString(iniparser_getstring(settings, "OSC:ControllerSubnetMask", failString));
@@ -239,7 +239,7 @@ public:
             IpAddr sendAddress = ipAddrWithString(iniparser_getstring(settings, "OSC:SendAddress", failString));
             netReadOK = netReadOK && !sendAddress.isNull();
             
-            int sendPort = iniparser_getboolean(settings, "OSC:SendPort", failInt);
+            int sendPort = iniparser_getint(settings, "OSC:SendPort", failInt);
             netReadOK = netReadOK && sendPort != failInt;
          
             IpAddr artNetControllerAddress = ipAddrWithString(iniparser_getstring(settings, "ArtNet:ControllerAddress", failString));
@@ -248,16 +248,16 @@ public:
             IpAddr artNetBroadcastAddress = ipAddrWithString(iniparser_getstring(settings, "ArtNet:BroadcastAddress", failString));
             netReadOK = netReadOK && !artNetBroadcastAddress.isNull();
             
-            int inChannelXFade = iniparser_getboolean(settings, "DMX:InChannelXFade", failInt);
+            int inChannelXFade = iniparser_getint(settings, "DMX:InChannelXFade", failInt);
             netReadOK = netReadOK && inChannelXFade != failInt;
             
-            int inChannelFadeUp = iniparser_getboolean(settings, "DMX:InChannelFadeUp", failInt);
+            int inChannelFadeUp = iniparser_getint(settings, "DMX:InChannelFadeUp", failInt);
             netReadOK = netReadOK && inChannelFadeUp != failInt;
             
-            int outChannelXFade = iniparser_getboolean(settings, "DMX:OutChannelXFade", failInt);
+            int outChannelXFade = iniparser_getint(settings, "DMX:OutChannelXFade", failInt);
             netReadOK = netReadOK && outChannelXFade != failInt;
             
-            int outChannelFadeUp = iniparser_getboolean(settings, "DMX:OutChannelFadeUp", failInt);
+            int outChannelFadeUp = iniparser_getint(settings, "DMX:OutChannelFadeUp", failInt);
             netReadOK = netReadOK && outChannelFadeUp != failInt;
             
             if (netReadOK)

@@ -16,7 +16,7 @@
 [OSC]
 
 DHCP = No
-ControllerAddress = 10.0.0.2
+ControllerAddress = 10.0.0.02
 ControllerPort = 10000
 ControllerSubnetMask = 255.255.255.0
 ControllerGateway = 10.0.0.1
@@ -52,22 +52,40 @@ OutChannelFadeUp = 1
 # back any darker parts of the image.
 
 [Key1]
-Name = Lumakey
+Name = White In
 MinY = 0
-MaxY = 18
+MaxY = 166
 MinU = 128
 MaxU = 129
 MinV = 128
 MaxV = 129
 
 [Key2]
-Name = Chromakey
+Name = Black Out
+MinY = 0
+MaxY = 50
+MinU = 128
+MaxU = 129
+MinV = 128
+MaxV = 129
+
+[Key3]
+Name = Blue Out
 MinY = 30
 MaxY = 35
 MinU = 237
 MaxU = 242
 MinV = 114
 MaxV = 121
+
+[Key4]
+Name = Green Out
+MinY = 144
+MaxY = 145
+MinU = 53
+MaxU = 135
+MinV = 34
+MaxV = 35
 
 # Edit the above, or add your own keys here, up to Key99
 

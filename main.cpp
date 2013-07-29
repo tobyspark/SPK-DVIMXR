@@ -484,43 +484,56 @@ void actionMixMode(bool reset = false)
     string sentOK;
     char* sentMSGBuffer = "Blend";
 
+    // Perform unset before set, in case mixMode = mixModeOld
+
+    if (mixModeOld == mixAdditive || reset)
+    {
+        // Turn off Additive Mixing on output
+        if (tvOne.getProcessorType().version == 423)
+        {
+            ok = ok && tvOne.command(0, kTV1WindowIDA, 0x298, 0);
+        }
+    }
     if (mixMode == mixAdditive) 
     {   
         sentMSGBuffer = "Additive";
     
         // First set B to what you'd expect for additive; it may be left at 100 if optimised blend mixing was previous mixmode.
-        ok =       tvOne.command(0, kTV1WindowIDB, kTV1FunctionAdjustWindowsMaxFadeLevel, fadeBPercent);
+        ok = ok && tvOne.command(0, kTV1WindowIDB, kTV1FunctionAdjustWindowsMaxFadeLevel, fadeBPercent);
         // Then turn on Additive Mixing
         if (tvOne.getProcessorType().version == 423)
         {
             ok = ok && tvOne.command(0, kTV1WindowIDA, 0x298, 1);
         }
     }
-    if (mixModeOld == mixAdditive || reset)
-    {
-        // Turn off Additive Mixing on output
-        if (tvOne.getProcessorType().version == 423)
-        {
-            ok = tvOne.command(0, kTV1WindowIDA, 0x298, 0);
-        }
-    }
-    
-    if (mixMode == mixKeyLeft)
-    {
-        sentMSGBuffer = "Key L over R";
-        
-        // Turn on Keyer
-        ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerEnable, true);
-    }
+
     if (mixModeOld == mixKeyLeft || reset)
     {
         // Turn off Keyer
         tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerEnable, false);
     }
     
+    if (mixMode == mixKeyLeft)
+    {
+        sentMSGBuffer = "Key L over R";
+        mixKeyWindow = kTV1WindowIDA;
+        
+        // Turn on Keyer
+        ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustKeyerEnable, true);
+    }
+
+    if (mixModeOld == mixKeyRight || reset)
+    {
+        // Restore window positions
+        ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustWindowsLayerPriority, 0);
+        
+        // Turn off Keyer
+        tvOne.command(0, kTV1WindowIDB, kTV1FunctionAdjustKeyerEnable, false); // Checkme: if check for success, returns failure errantly?
+    }    
     if (mixMode == mixKeyRight)
     {
         sentMSGBuffer = "Key R over L";
+        mixKeyWindow = kTV1WindowIDB;
         
         // Turn on Keyer
         ok = ok && tvOne.command(0, kTV1WindowIDB, kTV1FunctionAdjustKeyerEnable, true);
@@ -529,19 +542,17 @@ void actionMixMode(bool reset = false)
         // Set window B above window A
         ok = ok && tvOne.command(0, kTV1WindowIDB, kTV1FunctionAdjustWindowsLayerPriority, 0);
     }
-    if (mixModeOld == mixKeyRight || reset)
-    {
-        // Turn off Keyer
-        tvOne.command(0, kTV1WindowIDB, kTV1FunctionAdjustKeyerEnable, false);
-        
-        // Restore window positions
-        ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustWindowsLayerPriority, 0);
-    }
     
-    mixModeOld = mixMode;
-
-    if (ok) sentOK = "Sent:";
-    else sentOK = "Send Error:";
+    if (ok) 
+    {
+        mixModeOld = mixMode;
+        sentOK = "Sent: ";
+    }
+    else 
+    {
+        mixMode = mixModeOld;
+        sentOK = "Send Error: ";
+    }
     
     tvOneStatusMessage.addMessage(sentOK + sentMSGBuffer, kTVOneStatusMessageHoldTime);
 }
@@ -742,8 +753,8 @@ void setMixModeMenuItems()
         mixModeMenu.addMenuItem(SPKMenuItem("Blend", mixBlend));
     }
     
-    mixModeMenu.addMenuItem(SPKMenuItem("Key: L over R", mixKeyLeft));
-    mixModeMenu.addMenuItem(SPKMenuItem("Key: R over L", mixKeyRight));
+    mixModeMenu.addMenuItem(SPKMenuItem("Key: Left over Right", mixKeyLeft));
+    mixModeMenu.addMenuItem(SPKMenuItem("Key: Right over Left", mixKeyRight));
     mixModeMenu.addMenuItem(SPKMenuItem("Key: Tweak key values", &mixModeUpdateKeyMenu));
     
     // Load in presets from settings. Index 0 is the "live" key read from TVOne, so we ignore here.
@@ -1104,6 +1115,12 @@ void mixModeUpdateKeyMenuHandler(int menuChange, bool action)
             settings.setEditingKeyerSetValue(SPKSettings::maxU,255);
             settings.setEditingKeyerSetValue(SPKSettings::minV,0);
             settings.setEditingKeyerSetValue(SPKSettings::maxV,255);
+            tvOne.command(0, mixKeyWindow, kTV1FunctionAdjustKeyerMinY, 0);
+            tvOne.command(0, mixKeyWindow, kTV1FunctionAdjustKeyerMaxY, 255);
+            tvOne.command(0, mixKeyWindow, kTV1FunctionAdjustKeyerMinU, 0);
+            tvOne.command(0, mixKeyWindow, kTV1FunctionAdjustKeyerMaxU, 255);
+            tvOne.command(0, mixKeyWindow, kTV1FunctionAdjustKeyerMinV, 0);
+            tvOne.command(0, mixKeyWindow, kTV1FunctionAdjustKeyerMaxV, 255);
         }
         
         actionCount = 3;
@@ -1238,6 +1255,7 @@ void mixModeUpdateKeyMenuHandler(int menuChange, bool action)
     
         // Get back to menu
         actionCount = 0;
+        state = 0;
         selectedMenu = &mixModeMenu;
         screen.clearBufferRow(kMenuLine1);
         screen.clearBufferRow(kMenuLine2);
@@ -1403,7 +1421,7 @@ int main()
     handleTVOneSources();
     
     // Processor can have been power-on saved with a keyer on, lets revert
-    actionMixMode();
+    checkTVOneMixStatus();
     
     // Display menu and framing lines
     screen.horizLineToBuffer(kMenuLine1*pixInPage - 1);
@@ -1456,8 +1474,8 @@ int main()
                 screen.textToBuffer(selectedMenu->title, kMenuLine1);
                 screen.textToBuffer(selectedMenu->selectedString(), kMenuLine2);
             }
-            if (rj45Mode == rj45Ethernet) screen.textToBuffer("RJ45: Ethernet Engaged", kCommsStatusLine);
-            if (rj45Mode == rj45DMX) screen.textToBuffer("RJ45: DMX Engaged", kCommsStatusLine);
+            if (rj45Mode == rj45Ethernet) screen.textToBuffer("RJ45: Ethernet Mode", kCommsStatusLine);
+            if (rj45Mode == rj45DMX) screen.textToBuffer("RJ45: DMX Mode", kCommsStatusLine);
         }
 
         //// MENU
@@ -1533,7 +1551,7 @@ int main()
                 {
                     mixMode = mixModeMenuPayload;
                     
-                    if (mixMode == mixModeOld) tvOneStatusMessage.addMessage("Already active", kTVOneStatusMessageHoldTime);
+                    if (mixMode == mixModeOld) tvOneStatusMessage.addMessage("Mix mode already active", kTVOneStatusMessageHoldTime);
                 }
                 else
                 { 
@@ -1551,7 +1569,7 @@ int main()
                         
                         tvOne.command(0, kTV1WindowIDA, kTV1FunctionPowerOnPresetStore, 1);
                         
-                        tvOneStatusMessage.addMessage(ok ? "Loaded: " + settings.keyerParamName(keySetIndex) + " values" : "Send error: keyer values", kTVOneStatusMessageHoldTime, kTVOneStatusMessageHoldTime);
+                        tvOneStatusMessage.addMessage(ok ? "Loaded: " + settings.keyerParamName(keySetIndex) + " values" : "Send error: keyer values", kTVOneStatusMessageHoldTime);
                     }
                 }
             }

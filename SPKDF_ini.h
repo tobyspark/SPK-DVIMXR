@@ -126,23 +126,23 @@ Number = 115
 EDIDNumber = 6
 
 [Resolution6]
-Name = HD 720P24 (1280x720)
-Number = 40
-EDIDNumber = 5
-
-[Resolution7]
 Name = HD 720P50 (1280x720)
 Number = 44
 EDIDNumber = 5
 
-[Resolution8]
+[Resolution7]
 Name = HD 720P60 (1280x720)
 Number = 48
 EDIDNumber = 5
 
-[Resolution9]
+[Resolution8]
 Name = HD 1080P24 (1920x1080)
 Number = 101
+EDIDNumber = 5
+
+[Resolution9]
+Name = HD 1080P30 (1920x1080)
+Number = 105
 EDIDNumber = 5
 
 [Resolution10]

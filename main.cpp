@@ -636,7 +636,11 @@ bool conformProcessor()
         ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustWindowsEnable, on);
         ok = ok && tvOne.command(0, kTV1WindowIDB, kTV1FunctionAdjustWindowsEnable, on);
         ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustWindowsLayerPriority, 0);
-        ok = ok && tvOne.command(0, kTV1WindowIDB, kTV1FunctionAdjustWindowsLayerPriority, 1);                
+        ok = ok && tvOne.command(0, kTV1WindowIDB, kTV1FunctionAdjustWindowsLayerPriority, 1);
+        
+        // Turn off borders on those windows                
+        ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustBorderEnable, off);
+        ok = ok && tvOne.command(0, kTV1WindowIDB, kTV1FunctionAdjustBorderEnable, off);
             
         // Assign inputs to windows, so that left on the crossfader is left on the processor viewed from front
         ok = ok && tvOne.command(0, kTV1WindowIDA, kTV1FunctionAdjustWindowsWindowSource, kTV1SourceRGB2);

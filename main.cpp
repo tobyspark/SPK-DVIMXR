@@ -46,6 +46,7 @@
  * v27 - Rework Keying UX, having current key saved in processor and loading in presets.
  * v28 - Network tweaks. Reads OSC and ArtNet network info from .ini
  * v29 - Keying: Can change between Left over Right and Right over Left
+ * v30 - Matrox Dual/Triplehead - support for analogue edition timings (currently only analog DH2Go XGA)
  * vxx - TODO: Writes back to .ini on USB mass storage: keyer updates, comms, hdcp, edid internal/passthrough, ...?
  * vxx - TODO: EDID creation from resolution
  */
@@ -64,7 +65,7 @@
 #include "DMX.h"
 #include "filter.h"
 
-#define kSPKDFSoftwareVersion "29"
+#define kSPKDFSoftwareVersion "30"
 
 // MBED PINS
 
@@ -166,6 +167,7 @@ SPKMenu troubleshootingMenu;
 SPKMenu troubleshootingMenuHDCP;
 SPKMenu troubleshootingMenuEDID;
 SPKMenu troubleshootingMenuAspect;
+SPKMenu troubleshootingMenuMatrox;
 SPKMenu troubleshootingMenuReset;
 
 SPKMenu advancedMenu;
@@ -1044,6 +1046,62 @@ void troubleshootingMenuAspectHandler(int change, bool action)
     }
 }
 
+void troubleshootingMenuMatroxHandler(int change, bool action)
+{
+    static int state = 0;
+
+    if (change == 0 && !action)
+    {
+        // TODO: Find processor state. Test for a known timing value?
+    }
+    
+    state += change;
+    if (state > 2) state = 2;
+    if (state < 0) state = 0;
+    
+    screen.clearBufferRow(kMenuLine2);
+    switch (state) 
+    {
+        case 0: screen.textToBuffer("Set: [Digital/      /      ]", kMenuLine2); break;
+        case 1: screen.textToBuffer("Set: [       /Analog/      ]", kMenuLine2); break;
+        case 2: screen.textToBuffer("Set: [       /      /Cancel]", kMenuLine2); break;
+    }
+      
+    if (action)
+    {
+        if (state != 2)
+        {
+            screen.clearBufferRow(kTVOneStatusLine);
+            screen.textToBuffer("Configuring...", kTVOneStatusLine);
+            screen.sendBuffer();
+        
+            // Do the action
+            bool ok = false;
+            switch (state) 
+            {
+                case 0: ok = tvOne.setMatroxResolutions(true); break;
+                case 1: ok = tvOne.setMatroxResolutions(false); break;
+            }
+            
+            std::string sendOK = ok ? "Sent: " : "Send Error: ";
+            switch (state) 
+            {
+                case 0: sendOK += "Digital Timings"; break;
+                case 1: sendOK += "Analogue Timings"; break;
+            }
+            tvOneStatusMessage.addMessage(sendOK, kTVOneStatusMessageHoldTime);
+        }
+            
+        // Get back to menu
+        selectedMenu = &troubleshootingMenu;
+        
+        screen.clearBufferRow(kMenuLine1);
+        screen.clearBufferRow(kMenuLine2);
+        screen.textToBuffer(selectedMenu->title, kMenuLine1);
+        screen.textToBuffer(selectedMenu->selectedString(), kMenuLine2);
+    }
+}
+
 void mixModeUpdateKeyMenuHandler(int menuChange, bool action)
 {
     static int actionCount = 0;
@@ -1401,6 +1459,9 @@ int main()
     troubleshootingMenuAspect.title = "Aspect - Mismatched Res";
     troubleshootingMenuAspect.addMenuItem(SPKMenuItem(&troubleshootingMenuAspectHandler));
     troubleshootingMenu.addMenuItem(SPKMenuItem(troubleshootingMenuAspect.title, &troubleshootingMenuAspect));
+    troubleshootingMenuMatrox.title = "Matrox - Red Light";
+    troubleshootingMenuMatrox.addMenuItem(SPKMenuItem(&troubleshootingMenuMatroxHandler));
+    troubleshootingMenu.addMenuItem(SPKMenuItem(troubleshootingMenuMatrox.title, &troubleshootingMenuMatrox));
     troubleshootingMenuReset.title = "Output - Mixing Wrong";
     troubleshootingMenuReset.addMenuItem(SPKMenuItem(&troubleshootingMenuResetHandler));
     troubleshootingMenu.addMenuItem(SPKMenuItem(troubleshootingMenuReset.title, &troubleshootingMenuReset));

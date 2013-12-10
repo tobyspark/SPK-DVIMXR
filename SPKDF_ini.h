@@ -156,19 +156,24 @@ Number = 109
 EDIDNumber = 5
 
 [Resolution12]
-Name = Dual head SVGA (1600x600)
+Name = Dualhead SVGA (1600x600)
 Number = 75
 EDIDNumber = 3
 
 [Resolution13]
-Name = Dual head XGA (2048x768)
+Name = Dualhead XGA (2048x768)
 Number = 123
 EDIDNumber = 3
 
 [Resolution14]
-Name = Triple head VGA (1920x480)
+Name = Triplehead VGA (1920x480)
 Number = 90
 EDIDNumber = 3
+
+[Resolution15]
+Name = Quadhead XGA (2048x1536)
+Number = 128
+EDIDNumber = 2
 
 # Edit the above, or add your own keys here, up to Resolution99
 

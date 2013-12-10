@@ -699,13 +699,14 @@ bool uploadToProcessor()
     LocalFileSystem local("local");
     FILE *file;
     
-    // Upload Matrox EDID to mem4 (ie. index 3). Use this EDID slot when setting Matrox resolutions.
+    // Upload EDIDs
     if (tvOne.getProcessorType().version < 415)
     {
         if (debug) debug->printf("Skipping EDID upload as unsupported on detected TV One firmware\r\n");
     }
     else
     {
+        // Upload Matrox EDID to mem4 (ie. index 3). Use this EDID slot when setting Matrox resolutions.
         file = fopen("/local/matroxe.did", "r"); // 8.3, avoid .bin as mbed executable extension
         if (file)
         {
@@ -715,6 +716,18 @@ bool uploadToProcessor()
         else
         {
             if (debug) debug->printf("Could not open Matrox EDID file 'matroxe.did'\r\n");
+        }
+        
+        // Upload Datapath X4 EDID to mem3 (ie. index 2). Use this EDID slot when setting X4 resolutions.
+        file = fopen("/local/x4e.did", "r"); // 8.3, avoid .bin as mbed executable extension
+        if (file)
+        {
+            ok = ok && tvOne.uploadEDID(file, 2);   
+            fclose(file);
+        }
+        else
+        {
+            if (debug) debug->printf("Could not open X4 EDID file 'x4e.did'\r\n");
         }
     }
 

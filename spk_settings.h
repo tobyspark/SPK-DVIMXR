@@ -29,6 +29,7 @@ public:
     struct {
         IpAddr controllerAddress;
         IpAddr broadcastAddress;
+        int universe;
     } artNet;
     
     struct {
@@ -60,6 +61,7 @@ public:
         
         artNet.controllerAddress = IpAddr(2,0,0,100);
         artNet.broadcastAddress = IpAddr(2,255,255,255);
+        artNet.universe = 0;
         
         dmx.inChannelXFade = 0;
         dmx.inChannelFadeUp = 1;
@@ -248,6 +250,9 @@ public:
             IpAddr artNetBroadcastAddress = ipAddrWithString(iniparser_getstring(settings, "ArtNet:BroadcastAddress", failString));
             netReadOK = netReadOK && !artNetBroadcastAddress.isNull();
             
+            int universe = iniparser_getint(settings, "ArtNet:Universe", failInt);
+            netReadOK = netReadOK && universe != failInt;
+            
             int inChannelXFade = iniparser_getint(settings, "DMX:InChannelXFade", failInt);
             netReadOK = netReadOK && inChannelXFade != failInt;
             
@@ -274,6 +279,7 @@ public:
     
                 artNet.controllerAddress = artNetControllerAddress;
                 artNet.broadcastAddress = artNetBroadcastAddress;
+                artNet.universe = universe;
         
                 dmx.inChannelXFade = inChannelXFade;
                 dmx.inChannelFadeUp = inChannelFadeUp;

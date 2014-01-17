@@ -305,8 +305,8 @@ bool processArtNetIn()
 {
     if (artNet->Work()) 
     {
-        int xFadeDMX = artNet->DmxIn[0][0];
-        int fadeUpDMX = artNet->DmxIn[0][1];
+        int xFadeDMX = artNet->DmxIn[settings.artNet.universe][settings.dmx.inChannelXFade];
+        int fadeUpDMX = artNet->DmxIn[settings.artNet.universe][settings.dmx.inChannelFadeUp];
     
         commsXFade  = (float)xFadeDMX/255;
         commsFadeUp = (float)fadeUpDMX/255;
@@ -329,10 +329,19 @@ void processArtNetOut(const float &xFade, const float &fadeUp)
     int xFadeDMX = xFade*255;
     int fadeUpDMX = fadeUp*255;
     
-    // Universe 0, Channel 0 = xFade, Channel 1 = fadeUp
-    char dmxData[2] = {xFadeDMX, fadeUpDMX};
-    artNet->Send_ArtDmx(0, 0, dmxData, 2);
+    // Create array for all 512 DMX channels in the universe
+    char dmxData[512];
     
+    // Don't set every other channel to 0, rather channel values we already have
+    memcpy(dmxData, artNet->DmxIn[settings.artNet.universe], 512);
+        
+    // Set fade channels
+    dmxData[settings.dmx.outChannelXFade] = xFadeDMX;
+    dmxData[settings.dmx.outChannelFadeUp] = fadeUpDMX;
+    
+    // Send
+    artNet->Send_ArtDmx(settings.artNet.universe, 0, dmxData, 512);
+
     char statusMessageBuffer[kStringBufferLength];
     snprintf(statusMessageBuffer, kStringBufferLength, "A'Net Out: xF%3i fUp %3i", xFadeDMX, fadeUpDMX);
     screen.clearBufferRow(kCommsStatusLine);

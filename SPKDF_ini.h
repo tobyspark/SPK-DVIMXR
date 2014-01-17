@@ -11,7 +11,8 @@
 # Parameters for the various network modes
 #
 # OSC: if DHCP is set to Yes, the IP address parameters will be ignored.
-# Artnet: Will use the channel mapping set in the DMX section.
+# DMX: no universe setting, it's the cable you plug in!
+# Artnet: Will use the channel mapping set in the DMX section, along with the universe set here.
 
 [OSC]
 
@@ -29,6 +30,7 @@ SendPort = 10000
 
 ControllerAddress = 2.0.0.100
 BroadcastAddress = 2.255.255.255
+Universe = 0
 
 [DMX]
 
